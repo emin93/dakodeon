@@ -1,0 +1,31 @@
+{
+  "name": "dakodeon",
+  "version": "1.0.0",
+  "description": "A set of sleek React Native components.",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/emin93/dakodeon.git"
+  },
+  "keywords": [
+    "react-native",
+    "component-library"
+  ],
+  "author": "Emin Khateeb <emin@emin.ch>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/emin93/dakodeon/issues"
+  },
+  "homepage": "https://github.com/emin93/dakodeon#readme",
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-native": ">=0.60.0"
+  },
+  "devDependencies": {
+    "@types/react": "16.9.2",
+    "@types/react-native": "0.60.14"
+  }
+}
