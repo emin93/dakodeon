@@ -2,6 +2,8 @@
 
 > A set of sleek React Native components.
 
+> WIP: This project is in it's very early development. It's not usable right now!
+
 ## :camera: Screenshots
 
 ## :arrow_forward: Usage
