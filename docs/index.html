@@ -3,371 +3,449 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dakodeon</title>
-  <meta name="description" content="A minimal macOS menu bar local model runner with an OpenAI-compatible API.">
+  <title>Dakodeon — local models in your menu bar</title>
+  <meta name="description" content="A slim macOS menu bar app that runs local models with an OpenAI-compatible API. Pick a model, start the server, manage downloads.">
+  <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <meta property="og:title" content="Dakodeon">
+  <meta property="og:description" content="Run local models from your macOS menu bar with an OpenAI-compatible API.">
+  <meta property="og:image" content="assets/dakodeon-icon.png">
   <style>
     :root {
-      color-scheme: light;
-      --ink: #171717;
-      --muted: #636366;
-      --line: rgba(0, 0, 0, .12);
-      --panel: rgba(255, 255, 255, .72);
-      --surface: #f5f4f0;
+      --bg: #fbfbfd;
+      --bg-soft: #f2f2f5;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --faint: #86868b;
+      --card: #ffffff;
+      --line: rgba(0, 0, 0, .09);
+      --line-strong: rgba(0, 0, 0, .14);
       --accent: #0a84ff;
-      --ok: #30d158;
-      --shadow: 0 24px 70px rgba(25, 27, 31, .18);
+      --accent-ink: #ffffff;
+      --green: #30c057;
+      --red: #ff453a;
+      --shadow: 0 30px 80px -20px rgba(20, 24, 40, .28);
+      --panel-bg: rgba(250, 250, 252, .82);
+      --panel-line: rgba(0, 0, 0, .1);
     }
 
-    * {
-      box-sizing: border-box;
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --bg-soft: #111114;
+        --text: #f5f5f7;
+        --muted: #98989d;
+        --faint: #8a8a8f;
+        --card: #1a1a1d;
+        --line: rgba(255, 255, 255, .1);
+        --line-strong: rgba(255, 255, 255, .16);
+        --accent: #0a84ff;
+        --green: #32d74b;
+        --red: #ff453a;
+        --shadow: 0 40px 90px -30px rgba(0, 0, 0, .8);
+        --panel-bg: rgba(30, 30, 33, .8);
+        --panel-line: rgba(255, 255, 255, .12);
+      }
     }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-      color: var(--ink);
-      background:
-        linear-gradient(130deg, rgba(10,132,255,.16), transparent 28%),
-        linear-gradient(320deg, rgba(48,209,88,.13), transparent 26%),
-        var(--surface);
-    }
-
-    a {
-      color: inherit;
-      text-decoration: none;
-    }
-
-    .hero {
-      min-height: 92vh;
-      display: grid;
-      align-items: center;
-      padding: 42px clamp(20px, 5vw, 72px) 28px;
-    }
-
-    .hero-inner {
-      width: min(1120px, 100%);
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: minmax(0, .92fr) minmax(420px, 1.08fr);
-      gap: clamp(32px, 6vw, 72px);
-      align-items: center;
-    }
-
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 18px;
-    }
-
-    .eyebrow img {
-      width: 18px;
-      height: 18px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(54px, 8vw, 104px);
-      line-height: .92;
-      letter-spacing: 0;
-    }
-
-    .lede {
-      max-width: 560px;
-      margin: 24px 0 0;
-      color: #3f3f46;
-      font-size: 21px;
-      line-height: 1.45;
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 34px;
-    }
-
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 42px;
-      border-radius: 8px;
-      padding: 0 16px;
-      font-weight: 650;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,.7);
-      backdrop-filter: blur(20px);
-    }
-
-    .button.primary {
-      color: white;
-      background: var(--accent);
-      border-color: rgba(0,0,0,.04);
-      box-shadow: 0 10px 24px rgba(10,132,255,.28);
-    }
-
-    .desktop {
-      border-radius: 22px;
-      overflow: hidden;
-      background:
-        radial-gradient(circle at 18% 18%, rgba(255,255,255,.95), transparent 18%),
-        linear-gradient(145deg, #dfe6ef, #b8c6d8 46%, #eef0e9);
-      border: 1px solid rgba(255,255,255,.7);
-      box-shadow: var(--shadow);
-      aspect-ratio: 1.28;
-      position: relative;
-    }
-
-    .menubar {
-      height: 34px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 14px;
-      background: rgba(246,246,246,.76);
-      border-bottom: 1px solid rgba(0,0,0,.08);
-      backdrop-filter: blur(28px);
-      font-size: 13px;
-      font-weight: 560;
-    }
-
-    .menu-left,
-    .menu-right {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      min-width: 0;
-    }
-
-    .menu-right {
-      gap: 10px;
-      color: #2f3034;
-    }
-
-    .status-icon {
-      width: 17px;
-      height: 17px;
-      object-fit: contain;
-      filter: brightness(0);
-    }
-
-    .popover {
-      position: absolute;
-      right: 24px;
-      top: 48px;
-      width: min(340px, calc(100% - 48px));
-      padding: 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(0,0,0,.13);
-      background: rgba(250,250,250,.86);
-      box-shadow: 0 18px 54px rgba(0,0,0,.19);
-      backdrop-filter: blur(34px) saturate(1.35);
-    }
-
-    .popover-head {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-
-    .popover-head img {
-      width: 28px;
-      height: 28px;
-    }
-
-    .title {
-      font-weight: 700;
-    }
-
-    .state {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--ok);
-    }
-
-    .label {
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-
-    .select {
-      height: 34px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 10px;
-      border-radius: 7px;
-      border: 1px solid rgba(0,0,0,.13);
-      background: rgba(255,255,255,.86);
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .start {
-      height: 38px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-top: 14px;
-      color: white;
-      border-radius: 8px;
-      background: var(--accent);
-      font-weight: 700;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
-    }
-
-    .endpoint {
-      margin-top: 12px;
-      color: var(--muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-    }
-
-    .section {
-      width: min(1120px, 100%);
-      margin: 0 auto;
-      padding: 0 clamp(20px, 5vw, 72px) 72px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 18px;
-    }
-
-    .feature {
-      padding: 22px 0;
-      border-top: 1px solid var(--line);
-    }
-
-    .feature h2 {
-      margin: 0 0 8px;
-      font-size: 18px;
-      letter-spacing: 0;
-    }
-
-    .feature p {
-      margin: 0;
-      color: var(--muted);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
       line-height: 1.5;
     }
 
-    @media (max-width: 860px) {
-      .hero {
-        min-height: auto;
-        padding-top: 30px;
-      }
+    a { color: inherit; text-decoration: none; }
 
-      .hero-inner,
-      .section {
-        grid-template-columns: 1fr;
-      }
+    .wrap { width: min(1080px, 100% - 44px); margin: 0 auto; }
 
-      .desktop {
-        min-height: 430px;
-      }
+    .icon { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Nav */
+    nav {
+      position: sticky; top: 0; z-index: 20;
+      backdrop-filter: saturate(180%) blur(20px);
+      background: color-mix(in srgb, var(--bg) 72%, transparent);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 52px; }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
+    .brand img { width: 22px; height: 22px; }
+    .nav-links { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 14px; border-radius: 980px; background: var(--text); color: var(--bg);
+      font-weight: 550; font-size: 13.5px;
     }
 
+    /* Hero */
+    .hero { padding: clamp(56px, 9vw, 120px) 0 clamp(40px, 6vw, 80px); }
+    .hero-grid {
+      display: grid; grid-template-columns: 1.05fr .95fr; gap: clamp(32px, 5vw, 72px); align-items: center;
+    }
+    .tag {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 11px; border: 1px solid var(--line-strong); border-radius: 980px;
+      font-size: 12.5px; font-weight: 550; color: var(--muted); margin-bottom: 22px;
+    }
+    .tag .ping { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); }
+    h1 {
+      margin: 0; font-size: clamp(44px, 6.6vw, 76px); line-height: 1.02;
+      letter-spacing: -.03em; font-weight: 680;
+    }
+    h1 .grad { background: linear-gradient(120deg, var(--accent), #5e5ce6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lede { margin: 22px 0 0; max-width: 30em; font-size: clamp(17px, 2.1vw, 20px); color: var(--muted); }
+    .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 20px;
+      border-radius: 12px; font-weight: 560; font-size: 15px; border: 1px solid transparent; cursor: pointer;
+    }
+    .btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 22px -8px var(--accent); }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .btn-ghost { background: transparent; border-color: var(--line-strong); color: var(--text); }
+    .btn-ghost:hover { background: var(--bg-soft); }
+
+    .install {
+      margin-top: 22px; display: inline-flex; align-items: center; gap: 12px;
+      padding: 11px 14px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--card); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13.5px;
+    }
+    .install .prompt { color: var(--faint); }
+    .install .copy { margin-left: 6px; color: var(--faint); cursor: pointer; display: inline-flex; }
+    .install .copy:hover { color: var(--text); }
+
+    /* Mac stage */
+    .stage {
+      position: relative; border-radius: 22px; padding: 0; aspect-ratio: 1.18; overflow: hidden;
+      border: 1px solid var(--panel-line);
+      background:
+        radial-gradient(120% 90% at 80% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 55%),
+        radial-gradient(120% 90% at 0% 100%, color-mix(in srgb, #5e5ce6 20%, transparent), transparent 55%),
+        var(--bg-soft);
+      box-shadow: var(--shadow);
+    }
+    .desktop-bar {
+      height: 30px; display: flex; align-items: center; justify-content: flex-end; gap: 16px;
+      padding: 0 14px; font-size: 12px; color: var(--text);
+      background: color-mix(in srgb, var(--card) 70%, transparent);
+      border-bottom: 1px solid var(--panel-line); backdrop-filter: blur(20px);
+    }
+    .desktop-bar .active-ico { width: 15px; height: 15px; opacity: .9; }
+    .desktop-bar .sep { opacity: .55; }
+
+    /* Menu panel */
+    .panel {
+      position: absolute; top: 44px; right: 22px; width: min(290px, calc(100% - 44px));
+      padding: 14px; border-radius: 15px; border: 1px solid var(--panel-line);
+      background: var(--panel-bg); backdrop-filter: blur(40px) saturate(160%);
+      box-shadow: 0 22px 50px -16px rgba(0, 0, 0, .4);
+    }
+    .panel-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+    .panel-head img { width: 21px; height: 21px; }
+    .panel-title { font-weight: 600; font-size: 14px; flex: 1; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 530;
+      padding: 3px 8px; border-radius: 980px; color: var(--green);
+      background: color-mix(in srgb, var(--green) 14%, transparent);
+    }
+    .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .flabel { font-size: 10px; font-weight: 620; letter-spacing: .06em; color: var(--faint); margin-bottom: 6px; }
+    .select {
+      display: flex; align-items: center; justify-content: space-between; height: 33px; padding: 0 11px;
+      border-radius: 8px; border: 1px solid var(--panel-line);
+      background: color-mix(in srgb, var(--card) 55%, transparent); font-size: 13px; font-weight: 500;
+    }
+    .select .chev { color: var(--faint); }
+    .run {
+      width: 100%; height: 30px; margin-top: 12px; border: 0; border-radius: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      font-size: 13px; font-weight: 600; color: #fff;
+    }
+    .run.stop { background: var(--red); }
+    .run .glyph { width: 9px; height: 9px; border-radius: 2px; background: #fff; }
+    .endpoint {
+      display: flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 11.5px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted);
+    }
+    .endpoint .icon { color: var(--faint); }
+    .endpoint .spacer { flex: 1; }
+    .panel-rule { height: 1px; background: var(--panel-line); margin: 12px 0 10px; }
+    .panel-foot { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+    .panel-foot span { display: inline-flex; align-items: center; gap: 5px; }
+
+    /* Section scaffolding */
+    section.block { padding: clamp(48px, 7vw, 96px) 0; }
+    .kicker { color: var(--accent); font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+    h2 { margin: 12px 0 0; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.06; letter-spacing: -.025em; font-weight: 660; }
+    .section-lede { margin: 16px 0 0; max-width: 34em; font-size: 18px; color: var(--muted); }
+
+    /* Models section */
+    .models-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 4vw, 56px); align-items: center; margin-top: 44px; }
+    .feature-list { display: grid; gap: 22px; }
+    .feature-item { display: flex; gap: 14px; }
+    .feature-item .badge {
+      flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-size: 18px;
+    }
+    .feature-item h3 { margin: 2px 0 4px; font-size: 16.5px; font-weight: 600; }
+    .feature-item p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+    /* Settings window mock */
+    .window {
+      border-radius: 14px; overflow: hidden; border: 1px solid var(--panel-line);
+      background: var(--card); box-shadow: var(--shadow);
+    }
+    .titlebar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+    .traffic { width: 11px; height: 11px; border-radius: 50%; }
+    .traffic.r { background: #ff5f57; } .traffic.y { background: #febc2e; } .traffic.g { background: #28c840; }
+    .titlebar .wtitle { flex: 1; text-align: center; font-size: 12.5px; font-weight: 560; color: var(--muted); margin-right: 33px; }
+    .win-body { padding: 16px; background: var(--bg-soft); }
+    .group-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); margin: 2px 0 8px 4px; text-transform: uppercase; }
+    .model-card { border: 1px solid var(--line); border-radius: 11px; background: var(--card); padding: 14px; display: flex; gap: 13px; }
+    .model-card img.m { width: 40px; height: 40px; padding: 7px; border-radius: 10px; background: var(--bg-soft); }
+    .model-meta { flex: 1; min-width: 0; }
+    .model-meta .row1 { display: flex; align-items: center; gap: 8px; }
+    .model-meta .name { font-weight: 600; font-size: 14px; }
+    .model-meta .active { font-size: 10px; font-weight: 650; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 1px 7px; border-radius: 980px; }
+    .model-meta .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .bar { height: 6px; border-radius: 3px; background: var(--bg-soft); margin-top: 10px; overflow: hidden; border: 1px solid var(--line); }
+    .bar > i { display: block; height: 100%; width: 61%; background: var(--accent); }
+    .bar-cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .model-action { display: flex; align-items: flex-start; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 8px; border: 1px solid var(--line-strong); font-size: 12.5px; font-weight: 550; color: var(--text); white-space: nowrap; }
+
+    /* Features grid */
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 44px; }
+    .card { border: 1px solid var(--line); border-radius: 16px; padding: 24px; background: var(--card); }
+    .card .ic { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: var(--bg-soft); color: var(--accent); margin-bottom: 16px; font-size: 20px; }
+    .card h3 { margin: 0 0 7px; font-size: 17px; font-weight: 620; }
+    .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+    .card code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; background: var(--bg-soft); padding: 1px 5px; border-radius: 5px; }
+
+    /* Install band */
+    .band { border-radius: 22px; border: 1px solid var(--line); background: var(--bg-soft); padding: clamp(32px, 5vw, 56px); text-align: center; }
+    .band h2 { margin-top: 0; }
+    .codebox {
+      display: inline-flex; align-items: center; gap: 14px; margin-top: 22px; padding: 14px 18px;
+      border-radius: 12px; background: var(--card); border: 1px solid var(--line);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14px;
+    }
+    .codebox .prompt { color: var(--faint); }
+    .codebox .copy { color: var(--faint); cursor: pointer; display: inline-flex; }
+    .codebox .copy:hover { color: var(--text); }
+    .prereq { margin-top: 16px; color: var(--faint); font-size: 13.5px; }
+    .prereq code { background: var(--card); border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--line); padding: 32px 0; margin-top: clamp(40px, 6vw, 80px); }
+    .foot-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--faint); font-size: 13.5px; }
+    .foot-inner .brand { font-size: 14px; color: var(--text); }
+
+    @media (max-width: 880px) {
+      .hero-grid, .models-grid { grid-template-columns: 1fr; }
+      .stage { aspect-ratio: 1.3; }
+      .cards { grid-template-columns: 1fr; }
+      .nav-links a:not(.nav-cta) { display: none; }
+      .models-grid .window { order: -1; }
+    }
     @media (max-width: 520px) {
-      .menubar {
-        font-size: 12px;
-        gap: 8px;
-      }
-
-      .menu-left span:nth-child(n+3),
-      .menu-right span:nth-child(n+4) {
-        display: none;
-      }
-
-      .popover {
-        left: 18px;
-        right: 18px;
-        width: auto;
-      }
+      .install { width: 100%; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <section class="hero">
-      <div class="hero-inner">
-        <div>
-          <div class="eyebrow">
+  <!-- Shared icon set -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-chev" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V20a2 2 0 1 1-4 0v-.2A1.6 1.6 0 0 0 7 18.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></symbol>
+      <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+      <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 4v8"/><path d="M7.5 7a7 7 0 1 0 9 0"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L4 14h7l-1 7 9-11h-7z"/></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12m0 0l-5-5m5 5l5-5M4 20h16"/></symbol>
+      <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4L3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></symbol>
+    </defs>
+  </svg>
+
+  <nav>
+    <div class="wrap nav-inner">
+      <a class="brand" href="/"><img src="assets/dakodeon-icon.png" alt="">Dakodeon</a>
+      <div class="nav-links">
+        <a href="#models">Models</a>
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a class="nav-cta" href="https://github.com/emin93/dakodeon"><svg class="icon" style="width:15px;height:15px"><use href="#i-bolt"/></svg>GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="tag"><span class="ping"></span>macOS menu bar · local inference</span>
+        <h1>Local models,<br><span class="grad">one click away.</span></h1>
+        <p class="lede">Dakodeon lives in your menu bar. Pick a curated model, start the local server, and point any agent at an OpenAI-compatible API — no runtime to bundle, no config to babysit.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#install"><svg class="icon" style="width:17px;height:17px"><use href="#i-down"/></svg>Install</a>
+          <a class="btn btn-ghost" href="https://github.com/emin93/dakodeon">View source</a>
+        </div>
+        <div class="install">
+          <span class="prompt">$</span>
+          <span id="brew">brew install --cask emin93/tap/dakodeon</span>
+          <span class="copy" data-copy="brew install --cask emin93/tap/dakodeon" title="Copy"><svg class="icon" style="width:15px;height:15px"><use href="#i-copy"/></svg></span>
+        </div>
+      </div>
+
+      <div class="stage" aria-label="Dakodeon in the macOS menu bar">
+        <div class="desktop-bar">
+          <img class="active-ico" src="assets/dakodeon-icon.png" alt="Dakodeon menu bar icon" style="filter:none">
+          <span class="sep">􀙇</span>
+          <span>100%</span>
+          <span>Mon 9:41</span>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
             <img src="assets/dakodeon-icon.png" alt="">
-            macOS menu bar local model runner
+            <span class="panel-title">Dakodeon</span>
+            <span class="pill"><span class="dot"></span>Running</span>
           </div>
-          <h1>Dakodeon</h1>
-          <p class="lede">Pick a bundled local model, start the system llama server, and use the OpenAI-compatible API from agents like OpenCode. No bundled runtime, no setup screen, no dependency bundle.</p>
-          <div class="actions">
-            <a class="button primary" href="https://github.com/emin93/dakodeon">GitHub</a>
-            <a class="button" href="https://github.com/emin93/homebrew-tap">Homebrew tap</a>
+          <div class="flabel">MODEL</div>
+          <div class="select"><span>Gemma4 12B Coder</span><svg class="icon chev" style="width:13px;height:13px"><use href="#i-chev"/></svg></div>
+          <button class="run stop"><span class="glyph"></span>Stop Server</button>
+          <div class="endpoint">
+            <svg class="icon" style="width:13px;height:13px"><use href="#i-link"/></svg>
+            127.0.0.1:8080/v1
+            <span class="spacer"></span>
+            <svg class="icon" style="width:13px;height:13px"><use href="#i-copy"/></svg>
+          </div>
+          <div class="panel-rule"></div>
+          <div class="panel-foot">
+            <span><svg class="icon" style="width:13px;height:13px"><use href="#i-gear"/></svg>Settings</span>
+            <span><svg class="icon" style="width:13px;height:13px"><use href="#i-doc"/></svg>Logs</span>
+            <span><svg class="icon" style="width:13px;height:13px"><use href="#i-power"/></svg>Quit</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="block" id="models">
+    <div class="wrap">
+      <span class="kicker">Model manager</span>
+      <h2>Download, switch, delete.</h2>
+      <p class="section-lede">A built-in Settings window tracks every curated model. Watch downloads in real time, free up disk in a click, and switch models without touching a terminal.</p>
+
+      <div class="models-grid">
+        <div class="feature-list">
+          <div class="feature-item">
+            <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-down"/></svg></span>
+            <div><h3>Live download status</h3><p>Every model shows progress, size, and state — pulled straight from the shared Hugging Face cache.</p></div>
+          </div>
+          <div class="feature-item">
+            <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-swap"/></svg></span>
+            <div><h3>Instant switching</h3><p>Choose a model and the server stops and relaunches with its parameters — drafts, MTP, and all.</p></div>
+          </div>
+          <div class="feature-item">
+            <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-trash"/></svg></span>
+            <div><h3>Reclaim space</h3><p>Delete weights you're done with. One confirm and the backing files leave the cache.</p></div>
           </div>
         </div>
 
-        <div class="desktop" aria-label="Dakodeon shown as a macOS status bar app">
-          <div class="menubar">
-            <div class="menu-left">
-              <strong>Finder</strong>
-              <span>File</span>
-              <span>Edit</span>
-              <span>View</span>
-            </div>
-            <div class="menu-right">
-              <img class="status-icon" src="assets/dakodeon-icon.png" alt="Dakodeon status icon">
-              <span>Wi-Fi</span>
-              <span>100%</span>
-              <span>Mon 9:41</span>
-            </div>
+        <div class="window">
+          <div class="titlebar">
+            <span class="traffic r"></span><span class="traffic y"></span><span class="traffic g"></span>
+            <span class="wtitle">Settings</span>
           </div>
-
-          <div class="popover">
-            <div class="popover-head">
-              <img src="assets/dakodeon-icon.png" alt="">
-              <div>
-                <div class="title">Dakodeon</div>
-                <div class="state"><span class="dot"></span>Running</div>
+          <div class="win-body">
+            <div class="group-label">Models</div>
+            <div class="model-card">
+              <img class="m" src="assets/dakodeon-icon.png" alt="">
+              <div class="model-meta">
+                <div class="row1"><span class="name">Gemma4 12B Coder</span><span class="active">Active</span></div>
+                <div class="sub">12B · Q8_0 · MTP draft · 13.1 GB</div>
+                <div class="bar"><i></i></div>
+                <div class="bar-cap"><span>Downloading 61%</span><span>7.8 GB / 13.1 GB</span></div>
               </div>
+              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-trash"/></svg>Cancel</span></div>
             </div>
-            <div class="label">Model</div>
-            <div class="select">
-              <span>Gemma4-12B-Coder</span>
-              <span>⌄</span>
-            </div>
-            <div class="start">Stop Server</div>
-            <div class="endpoint">http://127.0.0.1:8080/v1</div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section class="section">
-      <div class="feature">
-        <h2>Bundled models</h2>
-        <p>Ships a small supported-model list in the app, updated by release instead of configured per machine.</p>
+  <section class="block" id="features">
+    <div class="wrap">
+      <span class="kicker">Why Dakodeon</span>
+      <h2>Small app. Real server.</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-server"/></svg></div>
+          <h3>OpenAI-compatible API</h3>
+          <p>Serves <code>llama-server</code> at <code>127.0.0.1:8080/v1</code> with a stable <code>local</code> alias for agents like OpenCode.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-box"/></svg></div>
+          <h3>No bundled runtime</h3>
+          <p>Uses the system <code>llama.cpp</code> and <code>hf</code> you already have. The app bundle stays tiny.</p>
+        </div>
+        <div class="card">
+          <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-bolt"/></svg></div>
+          <h3>Curated profiles</h3>
+          <p>Each profile ships ready to run — weights, draft model, and tuned flags. No knobs to get wrong.</p>
+        </div>
       </div>
-      <div class="feature">
-        <h2>Homebrew native</h2>
-        <p>Installs as a cask and assumes <code>llama.cpp</code> and <code>hf</code> already exist on the system, keeping the app bundle small.</p>
+    </div>
+  </section>
+
+  <section class="block" id="install">
+    <div class="wrap">
+      <div class="band">
+        <span class="kicker">Get started</span>
+        <h2>Install in one line.</h2>
+        <div class="codebox">
+          <span class="prompt">$</span>
+          <span>brew install --cask emin93/tap/dakodeon</span>
+          <span class="copy" data-copy="brew install --cask emin93/tap/dakodeon" title="Copy"><svg class="icon" style="width:16px;height:16px"><use href="#i-copy"/></svg></span>
+        </div>
+        <p class="prereq">Requires <code>llama.cpp</code> and <code>hf</code> on your PATH · macOS 14+</p>
       </div>
-      <div class="feature">
-        <h2>Minimal process</h2>
-        <p>Runs only as a menu bar app and launches <code>llama-server</code> with the selected model and a stable API alias.</p>
-      </div>
-    </section>
-  </main>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot-inner">
+      <a class="brand" href="/"><img src="assets/dakodeon-icon.png" alt="" style="width:20px;height:20px;vertical-align:-4px;margin-right:7px">Dakodeon</a>
+      <span>MIT licensed · Built for macOS</span>
+      <a href="https://github.com/emin93/dakodeon">GitHub ↗</a>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        navigator.clipboard && navigator.clipboard.writeText(el.getAttribute('data-copy'));
+        var svg = el.innerHTML;
+        el.textContent = 'Copied';
+        setTimeout(function () { el.innerHTML = svg; }, 1200);
+      });
+    });
+  </script>
 </body>
 </html>
