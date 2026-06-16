@@ -80,14 +80,21 @@
     }
     .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 52px; }
     .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: -.01em; }
-    .brand img { width: 22px; height: 22px; }
+    /* Brand mark rendered as a tintable mask so it stays visible in light and dark. */
+    .dico {
+      display: inline-block; flex: none; background-color: currentColor;
+      -webkit-mask: url(assets/dakodeon-icon.png) center / contain no-repeat;
+      mask: url(assets/dakodeon-icon.png) center / contain no-repeat;
+    }
+    .brand .dico { width: 22px; height: 22px; }
     .nav-links { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); }
-    .nav-links a:hover { color: var(--text); }
+    .nav-links a:not(.nav-cta):hover { color: var(--text); }
     .nav-cta {
       display: inline-flex; align-items: center; gap: 7px;
       padding: 7px 14px; border-radius: 980px; background: var(--text); color: var(--bg);
       font-weight: 550; font-size: 13.5px;
     }
+    .nav-cta:hover { opacity: .85; }
 
     /* Hero */
     .hero { padding: clamp(56px, 9vw, 120px) 0 clamp(40px, 6vw, 80px); }
@@ -152,7 +159,7 @@
       box-shadow: 0 22px 50px -16px rgba(0, 0, 0, .4);
     }
     .panel-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
-    .panel-head img { width: 21px; height: 21px; }
+    .panel-head .dico { width: 21px; height: 21px; }
     .panel-title { font-weight: 600; font-size: 14px; flex: 1; }
     .pill {
       display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 530;
@@ -174,13 +181,7 @@
     }
     .run.stop { background: var(--red); }
     .run .glyph { width: 9px; height: 9px; border-radius: 2px; background: #fff; }
-    .endpoint {
-      display: flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 11.5px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted);
-    }
-    .endpoint .icon { color: var(--faint); }
-    .endpoint .spacer { flex: 1; }
-    .panel-rule { height: 1px; background: var(--panel-line); margin: 12px 0 10px; }
+    .panel-rule { height: 1px; background: var(--panel-line); margin: 14px 0 10px; }
     .panel-foot { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
     .panel-foot span { display: inline-flex; align-items: center; gap: 5px; }
 
@@ -213,7 +214,8 @@
     .win-body { padding: 16px; background: var(--bg-soft); }
     .group-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); margin: 2px 0 8px 4px; text-transform: uppercase; }
     .model-card { border: 1px solid var(--line); border-radius: 11px; background: var(--card); padding: 14px; display: flex; gap: 13px; }
-    .model-card img.m { width: 40px; height: 40px; padding: 7px; border-radius: 10px; background: var(--bg-soft); }
+    .model-card .m { width: 40px; height: 40px; padding: 7px; border-radius: 10px; background: var(--bg-soft); display: grid; place-items: center; flex: none; }
+    .model-card .m .dico { width: 100%; height: 100%; }
     .model-meta { flex: 1; min-width: 0; }
     .model-meta .row1 { display: flex; align-items: center; gap: 8px; }
     .model-meta .name { font-weight: 600; font-size: 14px; }
@@ -285,7 +287,7 @@
 
   <nav>
     <div class="wrap nav-inner">
-      <a class="brand" href="/"><img src="assets/dakodeon-icon.png" alt="">Dakodeon</a>
+      <a class="brand" href="/"><span class="dico"></span>Dakodeon</a>
       <div class="nav-links">
         <a href="#models">Models</a>
         <a href="#features">Features</a>
@@ -314,26 +316,20 @@
 
       <div class="stage" aria-label="Dakodeon in the macOS menu bar">
         <div class="desktop-bar">
-          <img class="active-ico" src="assets/dakodeon-icon.png" alt="Dakodeon menu bar icon" style="filter:none">
+          <span class="dico active-ico" aria-label="Dakodeon menu bar icon" role="img"></span>
           <span class="sep">􀙇</span>
           <span>100%</span>
           <span>Mon 9:41</span>
         </div>
         <div class="panel">
           <div class="panel-head">
-            <img src="assets/dakodeon-icon.png" alt="">
+            <span class="dico"></span>
             <span class="panel-title">Dakodeon</span>
             <span class="pill"><span class="dot"></span>Running</span>
           </div>
           <div class="flabel">MODEL</div>
           <div class="select"><span>Gemma4 12B Coder</span><svg class="icon chev" style="width:13px;height:13px"><use href="#i-chev"/></svg></div>
           <button class="run stop"><span class="glyph"></span>Stop Server</button>
-          <div class="endpoint">
-            <svg class="icon" style="width:13px;height:13px"><use href="#i-link"/></svg>
-            127.0.0.1:8080/v1
-            <span class="spacer"></span>
-            <svg class="icon" style="width:13px;height:13px"><use href="#i-copy"/></svg>
-          </div>
           <div class="panel-rule"></div>
           <div class="panel-foot">
             <span><svg class="icon" style="width:13px;height:13px"><use href="#i-gear"/></svg>Settings</span>
@@ -375,7 +371,7 @@
           <div class="win-body">
             <div class="group-label">Models</div>
             <div class="model-card">
-              <img class="m" src="assets/dakodeon-icon.png" alt="">
+              <span class="m"><span class="dico"></span></span>
               <div class="model-meta">
                 <div class="row1"><span class="name">Gemma4 12B Coder</span><span class="active">Active</span></div>
                 <div class="sub">12B · Q8_0 · MTP draft · 13.1 GB</div>
@@ -431,7 +427,7 @@
 
   <footer>
     <div class="wrap foot-inner">
-      <a class="brand" href="/"><img src="assets/dakodeon-icon.png" alt="" style="width:20px;height:20px;vertical-align:-4px;margin-right:7px">Dakodeon</a>
+      <a class="brand" href="/"><span class="dico" style="width:20px;height:20px"></span>Dakodeon</a>
       <span>MIT licensed · Built for macOS</span>
       <a href="https://github.com/emin93/dakodeon">GitHub ↗</a>
     </div>
