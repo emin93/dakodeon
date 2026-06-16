@@ -75,34 +75,31 @@ private struct ModelRow: View {
   private var isActive: Bool { server.selectedProfileID == profile.id }
 
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
-      Image(nsImage: DakodeonImages.appIcon)
-        .resizable()
-        .interpolation(.high)
-        .frame(width: 30, height: 30)
-        .padding(6)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9))
-
-      VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
-          Text(profile.name).font(.system(size: 13, weight: .semibold))
-          if isActive {
-            Text("Active")
-              .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(.blue)
-              .padding(.horizontal, 6)
-              .padding(.vertical, 1)
-              .background(Color.blue.opacity(0.14), in: Capsule())
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 6) {
+            Text(profile.name).font(.system(size: 13, weight: .semibold))
+            if isActive {
+              Text("Active")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Color.blue.opacity(0.14), in: Capsule())
+            }
           }
+          Text("\(profile.detail) · \(ByteFormat.string(profile.bytes))")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+          statusLine
         }
-        Text("\(profile.detail) · \(ByteFormat.string(profile.bytes))")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-        statusLine
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        actions
       }
 
-      Spacer(minLength: 8)
-      actions
+      downloadBar
     }
     .padding(.vertical, 5)
     .confirmationDialog(
@@ -117,16 +114,21 @@ private struct ModelRow: View {
     }
   }
 
-  @ViewBuilder private var statusLine: some View {
-    switch status {
-    case .downloading(let progress, let completed, let total):
+  @ViewBuilder private var downloadBar: some View {
+    if case .downloading(let progress, let completed, let total) = status {
       VStack(alignment: .leading, spacing: 3) {
-        ProgressView(value: progress).progressViewStyle(.linear).tint(.blue).frame(width: 190)
+        ProgressView(value: progress).progressViewStyle(.linear).tint(.blue)
         Text("\(Int(progress * 100))% · \(ByteFormat.string(completed)) / \(ByteFormat.string(total))")
           .font(.system(size: 10.5))
           .foregroundStyle(.secondary)
       }
-      .padding(.top, 1)
+    }
+  }
+
+  @ViewBuilder private var statusLine: some View {
+    switch status {
+    case .downloading:
+      EmptyView()
     case .ready:
       Label("Ready", systemImage: "checkmark.circle.fill")
         .font(.system(size: 11))

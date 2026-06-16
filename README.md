@@ -61,7 +61,8 @@ brew install --cask emin93/tap/dakodeon
 ## How it works
 
 Dakodeon launches `llama-server` with the selected profile and exposes the standard
-OpenAI-compatible endpoints under a stable `local` alias:
+OpenAI-compatible endpoints. `GET /v1/models` returns the selected profile id, such
+as `gemma4-12b-it-qat` or `gemma4-31b-it-qat`.
 
 ```http
 POST http://127.0.0.1:8080/v1/chat/completions
@@ -80,17 +81,21 @@ The app exposes **no per-user configuration** — to add a model, append an entr
 
 ```swift
 ModelProfile(
-  id: "gemma4-12b-coder",
-  name: "Gemma4 12B Coder",
-  detail: "12B · Q8_0 · MTP draft",
-  weights: ModelAsset(repo: "yuxinlu1/…-GGUF", file: "gemma4-coding-Q8_0.gguf", bytes: 12_669_645_344),
-  draft:   ModelAsset(repo: "yuxinlu1/…-MTP-GGUF", file: "MTP/…-Q8_0.gguf", bytes: 465_109_248),
-  extraArguments: ["--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--n-gpu-layers-draft", "all"]
+  id: "gemma4-12b-it-qat",
+  name: "Gemma 4 12B IT QAT",
+  detail: "12B · UD-Q4_K_XL · MTP draft",
+  weights: ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf", bytes: 6_716_355_328),
+  draft:   ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "mtp-gemma-4-12B-it.gguf", bytes: 253_707_328),
+  extraArguments: ["-ngl", "999", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--n-gpu-layers-draft", "all"]
 )
 ```
 
-**Bundled today** — [Gemma4 12B Coder](https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF)
-(Q8_0) with an MTP draft model for speculative decoding.
+**Bundled today**
+
+| Profile | Quant | Draft | Download |
+| :-- | :-- | :-- | --: |
+| [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 6.97 GB |
+| [Gemma 4 31B IT QAT](https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 17.57 GB |
 
 ## Development
 

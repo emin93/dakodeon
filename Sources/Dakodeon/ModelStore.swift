@@ -40,7 +40,7 @@ final class ModelStore: ObservableObject {
   }
 
   /// Resolved on-disk path for an asset, or nil if it is not present.
-  func localURL(for asset: ModelAsset) -> URL? {
+  nonisolated func localURL(for asset: ModelAsset) -> URL? {
     let snapshots = repoURL(asset.repo).appendingPathComponent("snapshots")
     guard let revisions = try? FileManager.default.contentsOfDirectory(
       at: snapshots, includingPropertiesForKeys: nil) else { return nil }
@@ -236,19 +236,57 @@ final class ModelStore: ObservableObject {
     return hubURL.appendingPathComponent(folder)
   }
 
-  /// Total bytes currently stored in the blobs directories backing a profile's repos.
+  /// Total bytes currently stored for a profile's declared assets.
   nonisolated private func diskBytes(_ profile: ModelProfile) -> Int64 {
-    var total: Int64 = 0
-    for repo in Set(profile.assets.map(\.repo)) {
-      let blobs = repoURL(repo).appendingPathComponent("blobs")
-      guard let entries = try? FileManager.default.contentsOfDirectory(
-        at: blobs, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
-      for entry in entries {
-        let size = (try? entry.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        total += Int64(size)
-      }
+    profile.assets.reduce(0) { $0 + diskBytes($1) }
+  }
+
+  /// Bytes for exactly one asset. While Hugging Face is downloading, it can leave
+  /// several stale `<sha>.*.incomplete` files for the same blob; count only the
+  /// newest one so progress cannot exceed the asset's declared size.
+  nonisolated private func diskBytes(_ asset: ModelAsset) -> Int64 {
+    if let local = localURL(for: asset) {
+      return min(asset.bytes, fileBytes(local))
     }
-    return total
+
+    guard let sha = asset.blobSHA256 else { return 0 }
+    let blobs = repoURL(asset.repo).appendingPathComponent("blobs")
+    let complete = blobs.appendingPathComponent(sha)
+    if FileManager.default.fileExists(atPath: complete.path) {
+      return min(asset.bytes, fileBytes(complete))
+    }
+
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+      at: blobs,
+      includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+    ) else { return 0 }
+
+    let prefix = "\(sha)."
+    let partial = entries
+      .filter {
+        $0.lastPathComponent.hasPrefix(prefix)
+          && $0.lastPathComponent.hasSuffix(".incomplete")
+      }
+      .max {
+        let leftValues = try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+        let rightValues = try? $1.resourceValues(forKeys: [.contentModificationDateKey])
+        let left = leftValues?.contentModificationDate ?? .distantPast
+        let right = rightValues?.contentModificationDate ?? .distantPast
+        return left < right
+      }
+    return partial.map { min(asset.bytes, fileBytes($0)) } ?? 0
+  }
+
+  nonisolated private func fileBytes(_ url: URL) -> Int64 {
+    let resolved: URL
+    let isLink = (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink ?? false
+    if isLink, let blob = Self.blobURL(forLink: url) {
+      resolved = blob
+    } else {
+      resolved = url
+    }
+    let size = (try? resolved.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+    return Int64(size)
   }
 
   nonisolated private static func blobURL(forLink link: URL) -> URL? {

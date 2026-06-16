@@ -215,6 +215,7 @@
     .win-body { padding: 16px; background: var(--bg-soft); }
     .group-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--faint); margin: 2px 0 8px 4px; text-transform: uppercase; }
     .model-card { border: 1px solid var(--line); border-radius: 11px; background: var(--card); padding: 14px; display: flex; gap: 13px; }
+    .model-card + .model-card { margin-top: 10px; }
     .model-card .m { width: 40px; height: 40px; padding: 7px; border-radius: 10px; background: var(--bg-soft); display: grid; place-items: center; flex: none; }
     .model-card .m .dico { width: 100%; height: 100%; }
     .model-meta { flex: 1; min-width: 0; }
@@ -329,7 +330,7 @@
             <span class="pill"><span class="dot"></span>Running</span>
           </div>
           <div class="flabel">MODEL</div>
-          <div class="select"><span>Gemma4 12B Coder</span><svg class="icon chev" style="width:13px;height:13px"><use href="#i-chev"/></svg></div>
+          <div class="select"><span>Gemma 4 12B IT QAT</span><svg class="icon chev" style="width:13px;height:13px"><use href="#i-chev"/></svg></div>
           <button class="run stop"><span class="glyph"></span>Stop Server</button>
           <div class="panel-rule"></div>
           <div class="panel-foot">
@@ -374,12 +375,22 @@
             <div class="model-card">
               <span class="m"><span class="dico"></span></span>
               <div class="model-meta">
-                <div class="row1"><span class="name">Gemma4 12B Coder</span><span class="active">Active</span></div>
-                <div class="sub">12B · Q8_0 · MTP draft · 13.1 GB</div>
+                <div class="row1"><span class="name">Gemma 4 12B IT QAT</span><span class="active">Active</span></div>
+                <div class="sub">12B · UD-Q4_K_XL · MTP draft · 6.97 GB</div>
                 <div class="bar"><i></i></div>
-                <div class="bar-cap"><span>Downloading 61%</span><span>7.8 GB / 13.1 GB</span></div>
+                <div class="bar-cap"><span>Downloading 61%</span><span>4.25 GB / 6.97 GB</span></div>
               </div>
               <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-trash"/></svg>Cancel</span></div>
+            </div>
+            <div class="model-card">
+              <span class="m"><span class="dico"></span></span>
+              <div class="model-meta">
+                <div class="row1"><span class="name">Gemma 4 31B IT QAT</span></div>
+                <div class="sub">31B · UD-Q4_K_XL · MTP draft · 17.57 GB</div>
+                <div class="bar"><i style="width:0"></i></div>
+                <div class="bar-cap"><span>Not downloaded</span><span>17.57 GB</span></div>
+              </div>
+              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-down"/></svg>Download</span></div>
             </div>
           </div>
         </div>
@@ -395,7 +406,7 @@
         <div class="card">
           <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-server"/></svg></div>
           <h3>OpenAI-compatible API</h3>
-          <p>Serves <code>llama-server</code> at <code>127.0.0.1:8080/v1</code> with a stable <code>local</code> alias for agents like OpenCode.</p>
+          <p>Serves <code>llama-server</code> at <code>127.0.0.1:8080/v1</code> using the selected profile id for agents like OpenCode.</p>
         </div>
         <div class="card">
           <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-box"/></svg></div>

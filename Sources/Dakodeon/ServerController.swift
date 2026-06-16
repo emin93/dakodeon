@@ -166,7 +166,7 @@ final class ServerController: ObservableObject {
       arguments += ["-md", draftPath]
     }
     arguments += profile.extraArguments
-    arguments += ["-a", "local", "--host", host, "--port", String(port), "--no-ui"]
+    arguments += ["-a", profile.id, "--host", host, "--port", String(port), "--no-ui"]
 
     do {
       let log = try Self.makeLogFile()
