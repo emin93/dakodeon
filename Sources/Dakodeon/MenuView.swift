@@ -41,30 +41,36 @@ struct MenuView: View {
 
   private var modelSection: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("MODEL")
+      Text("ACTIVE MODEL")
         .font(.system(size: 10, weight: .semibold))
         .tracking(0.7)
         .foregroundStyle(.tertiary)
 
-      Menu {
-        ForEach(Catalog.profiles) { profile in
-          Button(profile.name) { server.selectProfile(profile.id) }
-        }
-      } label: {
-        HStack(spacing: 8) {
-          Text(server.selectedProfile?.name ?? "Select a model")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.primary)
-            .lineLimit(1)
-          Spacer(minLength: 0)
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-        }
+      HStack(spacing: 8) {
+        Text(activeModelName)
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(server.activeModelID == nil ? .secondary : .primary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: 0)
       }
-      .menuStyle(.button)
-      .buttonStyle(SelectButtonStyle())
-      .menuIndicator(.hidden)
+      .padding(.horizontal, 11)
+      .frame(height: 33)
+      .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
+    }
+  }
+
+  /// The model the router currently has loaded, shown read-only. Clients such as
+  /// OpenCode pick the model per request; Dakodeon just reflects what's loaded.
+  private var activeModelName: String {
+    if let id = server.activeModelID, let profile = Catalog.profile(id: id) {
+      return profile.name
+    }
+    switch server.state {
+    case .running: return "No model loaded"
+    case .starting: return "Starting…"
+    default: return "Server not running"
     }
   }
 
@@ -78,15 +84,13 @@ struct MenuView: View {
     }
   }
 
-  private func downloadView(progress: Double, completed: Int64, total: Int64) -> some View {
+  private func downloadView(progress: Double?, completed: Int64, total: Int64?) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      ProgressView(value: progress)
-        .progressViewStyle(.linear)
-        .tint(.blue)
+      DownloadProgressBar(progress: progress)
       HStack {
-        Text("Downloading \(Int(progress * 100))%")
+        Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Downloading")
         Spacer()
-        Text("\(ByteFormat.string(completed)) / \(ByteFormat.string(total))")
+        Text(downloadSizeText(completed: completed, total: total))
       }
       .font(.system(size: 11))
       .foregroundStyle(.secondary)
@@ -97,6 +101,13 @@ struct MenuView: View {
       }
       .controlSize(.regular)
     }
+  }
+
+  private func downloadSizeText(completed: Int64, total: Int64?) -> String {
+    if let total {
+      return "\(ByteFormat.string(completed)) / \(ByteFormat.string(total))"
+    }
+    return ByteFormat.string(completed)
   }
 
   private var primaryButton: some View {
@@ -168,6 +179,23 @@ enum Theme {
   static let stop = Color(red: 1, green: 69 / 255, blue: 58 / 255)
 }
 
+/// A linear progress bar: determinate when the fraction is known, indeterminate otherwise.
+struct DownloadProgressBar: View {
+  let progress: Double?
+
+  var body: some View {
+    Group {
+      if let progress {
+        ProgressView(value: progress)
+      } else {
+        ProgressView()
+      }
+    }
+    .progressViewStyle(.linear)
+    .tint(.blue)
+  }
+}
+
 /// A solid, high-contrast run/stop button that doesn't wash out over the panel's material.
 private struct RunButtonStyle: ButtonStyle {
   let fill: Color
@@ -182,20 +210,6 @@ private struct RunButtonStyle: ButtonStyle {
         in: RoundedRectangle(cornerRadius: 9)
       )
       .contentShape(RoundedRectangle(cornerRadius: 9))
-  }
-}
-
-/// A full-width bordered field used (via `.menuStyle(.button)`) for the model selector.
-private struct SelectButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .frame(maxWidth: .infinity)
-      .padding(.horizontal, 11)
-      .frame(height: 33)
-      .background(.quaternary.opacity(configuration.isPressed ? 0.8 : 0.5),
-                  in: RoundedRectangle(cornerRadius: 8))
-      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
-      .contentShape(RoundedRectangle(cornerRadius: 8))
   }
 }
 

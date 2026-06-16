@@ -72,24 +72,14 @@ private struct ModelRow: View {
   @State private var confirmingDelete = false
 
   private var status: ModelStatus { store.status(for: profile) }
-  private var isActive: Bool { server.selectedProfileID == profile.id }
+  private var isActive: Bool { server.activeModelID == profile.id }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .top, spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 6) {
-            Text(profile.name).font(.system(size: 13, weight: .semibold))
-            if isActive {
-              Text("Active")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.blue)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(Color.blue.opacity(0.14), in: Capsule())
-            }
-          }
-          Text("\(profile.detail) · \(ByteFormat.string(profile.bytes))")
+          Text(displayName).font(.system(size: 13, weight: .semibold))
+          Text(modelDetail)
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
           statusLine
@@ -103,26 +93,50 @@ private struct ModelRow: View {
     }
     .padding(.vertical, 5)
     .confirmationDialog(
-      "Delete \(profile.name)?",
+      "Delete \(displayName)?",
       isPresented: $confirmingDelete,
       titleVisibility: .visible
     ) {
       Button("Delete", role: .destructive) { store.delete(profile) }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("This removes the downloaded files (\(ByteFormat.string(profile.bytes))) from the cache.")
+      Text(deleteMessage)
     }
   }
 
   @ViewBuilder private var downloadBar: some View {
     if case .downloading(let progress, let completed, let total) = status {
       VStack(alignment: .leading, spacing: 3) {
-        ProgressView(value: progress).progressViewStyle(.linear).tint(.blue)
-        Text("\(Int(progress * 100))% · \(ByteFormat.string(completed)) / \(ByteFormat.string(total))")
+        DownloadProgressBar(progress: progress)
+        Text(downloadText(progress: progress, completed: completed, total: total))
           .font(.system(size: 10.5))
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  private var modelDetail: String {
+    var parts: [String] = []
+    if let size = store.sizeDescription(for: profile) { parts.append(size) }
+    if profile.hasDraft { parts.append("MTP draft") }
+    return parts.joined(separator: " · ")
+  }
+
+  private var displayName: String { profile.name }
+
+  private var deleteMessage: String {
+    if let size = store.sizeDescription(for: profile) {
+      return "This removes the downloaded files (\(size)) from the cache."
+    }
+    return "This removes the downloaded files from the cache."
+  }
+
+  private func downloadText(progress: Double?, completed: Int64, total: Int64?) -> String {
+    let percent = progress.map { "\(Int($0 * 100))% · " } ?? ""
+    if let total {
+      return "\(percent)\(ByteFormat.string(completed)) / \(ByteFormat.string(total))"
+    }
+    return "\(percent)\(ByteFormat.string(completed))"
   }
 
   @ViewBuilder private var statusLine: some View {
@@ -153,9 +167,13 @@ private struct ModelRow: View {
       .controlSize(.small)
     case .ready:
       HStack(spacing: 8) {
-        if !isActive {
-          Button("Use") { server.selectProfile(profile.id) }
-            .controlSize(.small)
+        if isActive {
+          Text("Active")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.blue)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(Color.blue.opacity(0.14), in: Capsule())
         }
         Menu {
           Button("Reveal in Finder") { reveal() }

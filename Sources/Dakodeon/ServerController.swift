@@ -14,8 +14,9 @@ enum ServerState: Equatable {
 
 /// Owns the `llama-server` process lifecycle and the selected model profile.
 ///
-/// Switching the active profile while the server runs stops it and relaunches with the
-/// new profile's parameters. Quitting the app terminates the server (see `App`).
+/// Launches llama-server in router mode with curated model presets. Requests from
+/// clients such as OpenCode select the active profile through the JSON `model` field.
+/// Quitting the app terminates the server (see `App`).
 @MainActor
 final class ServerController: ObservableObject {
   static let shared = ServerController()
@@ -25,7 +26,13 @@ final class ServerController: ObservableObject {
   @Published private(set) var state: ServerState = .stopped
   @Published private(set) var message = ""
 
-  @Published var selectedProfileID: String {
+  /// The model the router currently has loaded (from `/v1/models`), or nil when none is.
+  /// Clients such as OpenCode drive this by sending a `model` id per request.
+  @Published private(set) var activeModelID: String?
+
+  /// The profile preloaded when the server starts. Not a user-facing selector: it tracks
+  /// the last model the router had loaded so the next launch resumes it.
+  @Published private(set) var selectedProfileID: String {
     didSet { UserDefaults.standard.set(selectedProfileID, forKey: Self.selectionKey) }
   }
 
@@ -40,6 +47,7 @@ final class ServerController: ObservableObject {
   private var process: Process?
   private var logHandle: FileHandle?
   private var readinessTimer: Timer?
+  private var routerSyncTimer: Timer?
   private var readinessAttempts = 0
   private var stoppingIntentionally = false
   private var pendingRestart = false
@@ -59,14 +67,6 @@ final class ServerController: ObservableObject {
     selectedProfile.map { store.status(for: $0) } ?? .absent
   }
 
-  // MARK: - Selection
-
-  func selectProfile(_ id: String) {
-    guard id != selectedProfileID, Catalog.profile(id: id) != nil else { return }
-    selectedProfileID = id
-    if state.isActive { restart() }
-  }
-
   // MARK: - Run control
 
   func toggle() {
@@ -83,14 +83,13 @@ final class ServerController: ObservableObject {
       store.download(profile) { [weak self] ready in
         guard let self else { return }
         if self.activeDownloadProfileID == profile.id { self.activeDownloadProfileID = nil }
-        guard self.selectedProfileID == profile.id,
-              self.state.isStarting, self.process == nil else { return }
-        if ready { self.launch(profile) } else { self.fail("Couldn’t download \(profile.name)") }
+        guard self.state.isStarting, self.process == nil else { return }
+        if ready { self.launchRouter() } else { self.fail("Couldn’t download \(profile.name)") }
       }
       return
     }
 
-    launch(profile)
+    launchRouter()
   }
 
   func stop() {
@@ -112,6 +111,7 @@ final class ServerController: ObservableObject {
     pendingRestart = forRestart
     readinessTimer?.invalidate()
     readinessTimer = nil
+    stopRouterSync()
 
     // Cancel a start-triggered download for whichever profile is actually downloading.
     if let id = activeDownloadProfileID, let profile = Catalog.profile(id: id) {
@@ -149,32 +149,28 @@ final class ServerController: ObservableObject {
 
   // MARK: - Launch
 
-  private func launch(_ profile: ModelProfile) {
-    guard let weights = store.localURL(for: profile.weights)?.path else {
-      fail("Model files missing for \(profile.name)")
+  private func launchRouter() {
+    let profiles = Catalog.profiles.filter { store.isComplete($0) }
+    guard !profiles.isEmpty else {
+      fail("No downloaded models")
       return
     }
 
-    // `-c 0` uses each model's full trained context; `--jinja` uses the model's own
-    // embedded chat template for the most faithful tool-calling / reasoning handling.
-    var arguments = ["llama-server", "-m", weights, "-c", "0", "--jinja"]
-    if let draft = profile.draft {
-      guard let draftPath = store.localURL(for: draft)?.path else {
-        fail("Draft model missing for \(profile.name)")
-        return
-      }
-      arguments += ["-md", draftPath]
-    }
-    arguments += profile.extraArguments
-    arguments += ["-a", profile.id, "--host", host, "--port", String(port), "--no-ui"]
-
     do {
+      let preset = try writeRouterPreset(profiles)
       let log = try Self.makeLogFile()
       let handle = try FileHandle(forWritingTo: log)
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-      process.arguments = arguments
-      process.environment = environment
+      process.arguments = [
+        "llama-server",
+        "--models-preset", preset.path,
+        "--models-max", "1",
+        "--host", host,
+        "--port", String(port),
+        "--no-ui",
+      ]
+      process.environment = routerEnvironment()
       process.standardOutput = handle
       process.standardError = handle
       process.terminationHandler = { [weak self] finished in
@@ -186,7 +182,7 @@ final class ServerController: ObservableObject {
       self.logHandle = handle
       self.logURL = log
       self.stoppingIntentionally = false
-      self.message = "Loading \(profile.name)…"
+      self.message = "Starting router…"
       pollUntilReady()
     } catch {
       fail(error.localizedDescription)
@@ -197,6 +193,7 @@ final class ServerController: ObservableObject {
     guard finished === process else { return }
     readinessTimer?.invalidate()
     readinessTimer = nil
+    resetRouterState()
     process = nil
     activeDownloadProfileID = nil
     closeLog()
@@ -223,6 +220,7 @@ final class ServerController: ObservableObject {
   private func finishStopped() {
     state = .stopped
     message = "Idle"
+    resetRouterState()
     if pendingRestart {
       pendingRestart = false
       start()
@@ -262,6 +260,55 @@ final class ServerController: ObservableObject {
     readinessTimer = nil
     state = .running
     message = "Serving \(endpoint)"
+    startRouterSync()
+  }
+
+  // MARK: - Router sync
+
+  private func startRouterSync() {
+    stopRouterSync()
+    syncRouterActiveModel()
+    routerSyncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+      Task { @MainActor in self?.syncRouterActiveModel() }
+    }
+  }
+
+  private func stopRouterSync() {
+    routerSyncTimer?.invalidate()
+    routerSyncTimer = nil
+  }
+
+  /// Tear down router bookkeeping: stop the sync poll and clear the active-model mirror.
+  /// Called from every path that ends the server process.
+  private func resetRouterState() {
+    stopRouterSync()
+    activeModelID = nil
+  }
+
+  /// Poll the router for the loaded model and mirror it into `activeModelID`. Clients
+  /// (OpenCode, etc.) decide which model is loaded by the `model` id they send; Dakodeon
+  /// only reflects it and remembers the last loaded model as the next startup profile.
+  private func syncRouterActiveModel() {
+    guard process?.isRunning == true else { return }
+    let url = URL(string: "\(endpoint)/models")!
+    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+      guard let data,
+            let status = (response as? HTTPURLResponse)?.statusCode,
+            (200..<300).contains(status),
+            let payload = try? JSONDecoder().decode(RouterModelsResponse.self, from: data)
+      else { return }
+
+      let known = Set(Catalog.profiles.map(\.id))
+      let models = payload.data.filter { known.contains($0.id) }
+      let loaded = models.first { $0.status?.value == "loaded" }?.id
+      let active = loaded ?? models.first { $0.status?.value == "loading" }?.id
+      Task { @MainActor in
+        guard let self, self.process?.isRunning == true else { return }
+        self.activeModelID = active
+        // Remember the last fully-loaded model so the next launch preloads it.
+        if let loaded, self.selectedProfileID != loaded { self.selectedProfileID = loaded }
+      }
+    }.resume()
   }
 
   // MARK: - Failure & shutdown
@@ -269,6 +316,7 @@ final class ServerController: ObservableObject {
   private func fail(_ text: String) {
     readinessTimer?.invalidate()
     readinessTimer = nil
+    resetRouterState()
     pendingRestart = false
     activeDownloadProfileID = nil
 
@@ -293,6 +341,7 @@ final class ServerController: ObservableObject {
     store.cancelAll()
     readinessTimer?.invalidate()
     readinessTimer = nil
+    resetRouterState()
     guard let process, process.isRunning else { return }
     process.terminate()
     let deadline = Date().addingTimeInterval(3)
@@ -303,6 +352,98 @@ final class ServerController: ObservableObject {
   }
 
   // MARK: - Helpers
+
+  private func writeRouterPreset(_ profiles: [ModelProfile]) throws -> URL {
+    let directory = try Self.applicationSupportDirectory()
+      .appendingPathComponent("Router", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let file = directory.appendingPathComponent("models.ini")
+
+    var lines: [String] = []
+    for profile in profiles {
+      guard let weights = store.localURL(for: profile.weights)?.path else {
+        throw Self.error("Model files missing for \(profile.name)")
+      }
+
+      lines += [
+        "[\(profile.id)]",
+        "load-on-startup = \(profile.id == selectedProfileID ? "true" : "false")",
+        "model = \(weights)",
+      ]
+
+      if let draft = profile.draft {
+        guard let draftPath = store.localURL(for: draft)?.path else {
+          throw Self.error("Draft model missing for \(profile.name)")
+        }
+        lines.append("model-draft = \(draftPath)")
+      }
+
+      for (key, value) in Self.routerPresetArguments(profile.extraArguments) {
+        lines.append("\(key) = \(value)")
+      }
+      lines.append("")
+    }
+
+    try lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+    return file
+  }
+
+  private func routerEnvironment() -> [String: String] {
+    var env = environment
+    if let directory = try? Self.applicationSupportDirectory()
+      .appendingPathComponent("LlamaCache", isDirectory: true) {
+      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      env["LLAMA_CACHE"] = directory.path
+    }
+    return env
+  }
+
+  private static func routerPresetArguments(_ arguments: [String]) -> [(String, String)] {
+    var result: [(String, String)] = []
+    var index = 0
+    while index < arguments.count {
+      let flag = arguments[index]
+      guard flag.hasPrefix("-") else {
+        index += 1
+        continue
+      }
+
+      let key = routerPresetKey(flag)
+      let next = index + 1 < arguments.count ? arguments[index + 1] : nil
+      if let next, !next.hasPrefix("-") {
+        result.append((key, next))
+        index += 2
+      } else {
+        result.append((key, "true"))
+        index += 1
+      }
+    }
+    return result
+  }
+
+  private static func routerPresetKey(_ flag: String) -> String {
+    switch flag {
+    case "-fa", "--flash-attn":
+      return "flash-attn"
+    case "-ngl", "--n-gpu-layers":
+      return "n-gpu-layers"
+    case "-md", "--model-draft":
+      return "model-draft"
+    default:
+      return flag.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+  }
+
+  private static func applicationSupportDirectory() throws -> URL {
+    let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Dakodeon", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory
+  }
+
+  private static func error(_ message: String) -> NSError {
+    NSError(domain: "Dakodeon", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+  }
 
   private func closeLog() {
     try? logHandle?.close()
@@ -326,4 +467,17 @@ final class ServerController: ObservableObject {
     env["PATH"] = "\(homebrew):\(env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")"
     return env
   }
+}
+
+private struct RouterModelsResponse: Decodable {
+  let data: [RouterModel]
+}
+
+private struct RouterModel: Decodable {
+  let id: String
+  let status: RouterStatus?
+}
+
+private struct RouterStatus: Decodable {
+  let value: String
 }

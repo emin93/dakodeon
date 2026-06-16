@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dakodeon — local models in your menu bar</title>
-  <meta name="description" content="A slim macOS menu bar app that runs local models with an OpenAI-compatible API. Pick a model, start the server, manage downloads.">
+  <meta name="description" content="A slim macOS menu bar app that runs local models behind an OpenAI-compatible router. Your agent picks the model by id; Dakodeon runs the server and manages downloads.">
   <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
@@ -174,6 +174,7 @@
       border-radius: 8px; border: 1px solid var(--panel-line);
       background: color-mix(in srgb, var(--card) 55%, transparent); font-size: 13px; font-weight: 500;
     }
+    .select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .select .chev { color: var(--faint); }
     .run {
       width: 100%; height: 30px; margin-top: 12px; border: 0; border-radius: 9px; cursor: pointer;
@@ -220,7 +221,7 @@
     .model-card .m .dico { width: 100%; height: 100%; }
     .model-meta { flex: 1; min-width: 0; }
     .model-meta .row1 { display: flex; align-items: center; gap: 8px; }
-    .model-meta .name { font-weight: 600; font-size: 14px; }
+    .model-meta .name { font-weight: 600; font-size: 14px; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .model-meta .active { font-size: 10px; font-weight: 650; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 1px 7px; border-radius: 980px; }
     .model-meta .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
     .bar { height: 6px; border-radius: 3px; background: var(--bg-soft); margin-top: 10px; overflow: hidden; border: 1px solid var(--line); }
@@ -272,7 +273,6 @@
   <!-- Shared icon set -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
-      <symbol id="i-chev" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></symbol>
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V20a2 2 0 1 1-4 0v-.2A1.6 1.6 0 0 0 7 18.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1z"/></symbol>
@@ -304,7 +304,7 @@
       <div>
         <span class="tag"><span class="ping"></span>macOS menu bar · local inference</span>
         <h1>Local models,<br><span class="grad">one click away.</span></h1>
-        <p class="lede">Dakodeon lives in your menu bar. Pick a curated model, start the local server, and point any agent at an OpenAI-compatible API — no runtime to bundle, no config to babysit.</p>
+        <p class="lede">Dakodeon lives in your menu bar. Start a local OpenAI-compatible router, point your agent at it, and switch models by id from the client — no runtime to bundle, no config to babysit.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#install"><svg class="icon" style="width:17px;height:17px"><use href="#i-down"/></svg>Install</a>
           <a class="btn btn-ghost" href="https://github.com/emin93/dakodeon">View source</a>
@@ -329,8 +329,8 @@
             <span class="panel-title">Dakodeon</span>
             <span class="pill"><span class="dot"></span>Running</span>
           </div>
-          <div class="flabel">MODEL</div>
-          <div class="select"><span>Gemma 4 12B IT QAT</span><svg class="icon chev" style="width:13px;height:13px"><use href="#i-chev"/></svg></div>
+          <div class="flabel">ACTIVE MODEL</div>
+          <div class="select"><span>unsloth/gemma-4-12B-it-qat-GGUF</span></div>
           <button class="run stop"><span class="glyph"></span>Stop Server</button>
           <div class="panel-rule"></div>
           <div class="panel-foot">
@@ -346,18 +346,18 @@
   <section class="block" id="models">
     <div class="wrap">
       <span class="kicker">Model manager</span>
-      <h2>Download, switch, delete.</h2>
-      <p class="section-lede">A built-in Settings window tracks every curated model. Watch downloads in real time, free up disk in a click, and switch models without touching a terminal.</p>
+      <h2>Download, serve, delete.</h2>
+      <p class="section-lede">A built-in Settings window tracks every curated model. Watch downloads in real time and free up disk in a click — your agent switches models by id over the API, no picker to babysit.</p>
 
       <div class="models-grid">
         <div class="feature-list">
           <div class="feature-item">
             <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-down"/></svg></span>
-            <div><h3>Live download status</h3><p>Every model shows progress, size, and state — pulled straight from the shared Hugging Face cache.</p></div>
+            <div><h3>Live download status</h3><p>Progress, sizes, and hashes resolve straight from Hugging Face file metadata — no guessing, no stale numbers.</p></div>
           </div>
           <div class="feature-item">
             <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-swap"/></svg></span>
-            <div><h3>Instant switching</h3><p>Choose a model and the server stops and relaunches with its parameters — drafts, MTP, and all.</p></div>
+            <div><h3>Selection lives in your agent</h3><p>OpenCode (or any client) sends a model id and the router loads that profile — drafts, MTP, and all. Dakodeon just shows what's live.</p></div>
           </div>
           <div class="feature-item">
             <span class="badge"><svg class="icon" style="width:19px;height:19px"><use href="#i-trash"/></svg></span>
@@ -375,22 +375,20 @@
             <div class="model-card">
               <span class="m"><span class="dico"></span></span>
               <div class="model-meta">
-                <div class="row1"><span class="name">Gemma 4 12B IT QAT</span><span class="active">Active</span></div>
-                <div class="sub">12B · UD-Q4_K_XL · MTP draft · 6.97 GB</div>
-                <div class="bar"><i></i></div>
-                <div class="bar-cap"><span>Downloading 61%</span><span>4.25 GB / 6.97 GB</span></div>
+                <div class="row1"><span class="name">unsloth/gemma-4-12B-it-qat-GGUF</span><span class="active">Active</span></div>
+                <div class="sub">6.97 GB · MTP draft</div>
               </div>
-              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-trash"/></svg>Cancel</span></div>
+              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-trash"/></svg>Delete</span></div>
             </div>
             <div class="model-card">
               <span class="m"><span class="dico"></span></span>
               <div class="model-meta">
-                <div class="row1"><span class="name">Gemma 4 31B IT QAT</span></div>
-                <div class="sub">31B · UD-Q4_K_XL · MTP draft · 17.57 GB</div>
-                <div class="bar"><i style="width:0"></i></div>
-                <div class="bar-cap"><span>Not downloaded</span><span>17.57 GB</span></div>
+                <div class="row1"><span class="name">unsloth/gemma-4-31B-it-qat-GGUF</span></div>
+                <div class="sub">17.57 GB · MTP draft</div>
+                <div class="bar"><i style="width:24%"></i></div>
+                <div class="bar-cap"><span>Downloading 24%</span><span>4.25 GB / 17.57 GB</span></div>
               </div>
-              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-down"/></svg>Download</span></div>
+              <div class="model-action"><span class="chip"><svg class="icon" style="width:14px;height:14px"><use href="#i-trash"/></svg>Cancel</span></div>
             </div>
           </div>
         </div>
@@ -406,7 +404,7 @@
         <div class="card">
           <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-server"/></svg></div>
           <h3>OpenAI-compatible API</h3>
-          <p>Serves <code>llama-server</code> at <code>127.0.0.1:8080/v1</code> using the selected profile id for agents like OpenCode.</p>
+          <p>Serves <code>llama-server</code> at <code>127.0.0.1:8080/v1</code> with router presets for agents like OpenCode.</p>
         </div>
         <div class="card">
           <div class="ic"><svg class="icon" style="width:21px;height:21px"><use href="#i-box"/></svg></div>

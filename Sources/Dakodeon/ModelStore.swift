@@ -2,7 +2,7 @@ import Foundation
 
 enum ModelStatus: Equatable {
   case absent
-  case downloading(progress: Double, completed: Int64, total: Int64)
+  case downloading(progress: Double?, completed: Int64, total: Int64?)
   case ready(bytes: Int64)
   case failed(String)
 
@@ -10,16 +10,35 @@ enum ModelStatus: Equatable {
   var isReady: Bool { if case .ready = self { return true } else { return false } }
 }
 
+private struct AssetMetadata: Equatable, Sendable {
+  let size: Int64
+  let sha256: String?
+}
+
+private struct HFRepoEntry: Decodable {
+  let path: String
+  let size: Int64?
+  let lfs: HFLFS?
+}
+
+private struct HFLFS: Decodable {
+  let size: Int64?
+  let sha256: String?
+}
+
 /// Manages model files in the Hugging Face cache: status, downloads, and deletion.
 ///
-/// Downloads run through the `hf` CLI; progress is derived by polling bytes on disk
-/// against the known asset sizes, and deletion removes the backing blobs directly.
+/// Downloads run through the `hf` CLI. File sizes and LFS hashes are discovered
+/// through `hf models list <repo> -R --json`, then used for progress and partials.
 @MainActor
 final class ModelStore: ObservableObject {
   @Published private(set) var statuses: [String: ModelStatus] = [:]
 
   private let hubURL: URL
   private let environment: [String: String]
+  @Published private var assetMetadata: [ModelAsset: AssetMetadata] = [:]
+  private var metadataLoadingRepos = Set<String>()
+  private var metadataLoadedRepos = Set<String>()
   private var downloads: [String: Download] = [:]
   private var pollTimers: [String: Timer] = [:]
 
@@ -27,12 +46,26 @@ final class ModelStore: ObservableObject {
     self.hubURL = Self.resolveHubURL()
     self.environment = Self.makeEnvironment()
     refreshAll()
+    refreshRemoteMetadata()
   }
 
   // MARK: - Status
 
   func status(for profile: ModelProfile) -> ModelStatus {
     statuses[profile.id] ?? .absent
+  }
+
+  func expectedBytes(for profile: ModelProfile) -> Int64? {
+    expectedBytes(profile, metadata: assetMetadata)
+  }
+
+  func sizeDescription(for profile: ModelProfile) -> String? {
+    if let expected = expectedBytes(for: profile) {
+      return ByteFormat.string(expected)
+    }
+
+    let bytes = diskBytes(profile, metadata: assetMetadata)
+    return bytes > 0 ? ByteFormat.string(bytes) : nil
   }
 
   func isComplete(_ profile: ModelProfile) -> Bool {
@@ -59,23 +92,35 @@ final class ModelStore: ObservableObject {
 
   func refresh(_ profile: ModelProfile) {
     guard downloads[profile.id] == nil else { return }
-    statuses[profile.id] = isComplete(profile) ? .ready(bytes: diskBytes(profile)) : .absent
+    statuses[profile.id] = isComplete(profile)
+      ? .ready(bytes: diskBytes(profile, metadata: assetMetadata))
+      : .absent
+  }
+
+  func refreshRemoteMetadata() {
+    fetchMetadata(for: Set(Catalog.profiles.flatMap { $0.assets.map(\.repo) }))
   }
 
   // MARK: - Download
 
   func download(_ profile: ModelProfile, completion: ((Bool) -> Void)? = nil) {
     guard downloads[profile.id] == nil else { return }
+    fetchMetadata(for: Set(profile.assets.map(\.repo)))
     if isComplete(profile) {
-      statuses[profile.id] = .ready(bytes: diskBytes(profile))
+      statuses[profile.id] = .ready(bytes: diskBytes(profile, metadata: assetMetadata))
       completion?(true)
       return
     }
 
     let download = Download(completion: completion)
     downloads[profile.id] = download
+    let total = expectedBytes(for: profile)
+    let completed = diskBytes(profile, metadata: assetMetadata)
     statuses[profile.id] = .downloading(
-      progress: 0, completed: diskBytes(profile), total: profile.bytes)
+      progress: progressFraction(completed: completed, total: total),
+      completed: completed,
+      total: total
+    )
     startPolling(profile)
 
     let assets = profile.assets
@@ -128,7 +173,7 @@ final class ModelStore: ObservableObject {
     stopPolling(profile)
 
     if isComplete(profile) {
-      statuses[profile.id] = .ready(bytes: diskBytes(profile))
+      statuses[profile.id] = .ready(bytes: diskBytes(profile, metadata: assetMetadata))
       download.completion?(true)
     } else if download.isCancelled {
       statuses[profile.id] = .absent
@@ -154,16 +199,84 @@ final class ModelStore: ObservableObject {
 
   private func updateProgress(_ profile: ModelProfile) {
     guard downloads[profile.id] != nil else { return }
-    let total = profile.bytes
+    let metadata = assetMetadata
     // Walk the cache off the main actor; publish the result back on it.
     DispatchQueue.global(qos: .utility).async {
-      let completed = self.diskBytes(profile)
+      let completed = self.diskBytes(profile, metadata: metadata)
       Task { @MainActor in
         guard self.downloads[profile.id] != nil else { return }
-        let progress = total > 0 ? min(0.999, Double(completed) / Double(total)) : 0
+        let total = self.expectedBytes(for: profile)
+        let progress = self.progressFraction(completed: completed, total: total)
         self.statuses[profile.id] = .downloading(progress: progress, completed: completed, total: total)
       }
     }
+  }
+
+  // MARK: - Remote metadata
+
+  private func fetchMetadata(for repos: Set<String>) {
+    let reposToLoad = repos.filter {
+      !metadataLoadingRepos.contains($0) && !metadataLoadedRepos.contains($0)
+    }
+    guard !reposToLoad.isEmpty else { return }
+
+    for repo in reposToLoad { metadataLoadingRepos.insert(repo) }
+    let env = environment
+    DispatchQueue.global(qos: .utility).async {
+      for repo in reposToLoad {
+        let metadata = Self.loadRepoMetadata(repo, environment: env)
+        Task { @MainActor in
+          self.finishMetadataLoad(repo, metadata: metadata)
+        }
+      }
+    }
+  }
+
+  private func finishMetadataLoad(_ repo: String, metadata: [String: AssetMetadata]?) {
+    metadataLoadingRepos.remove(repo)
+    guard let metadata else { return }
+
+    metadataLoadedRepos.insert(repo)
+    for profile in Catalog.profiles {
+      for asset in profile.assets where asset.repo == repo {
+        if let fileMetadata = metadata[asset.file] {
+          assetMetadata[asset] = fileMetadata
+        }
+      }
+      if downloads[profile.id] == nil { refresh(profile) }
+    }
+  }
+
+  nonisolated private static func loadRepoMetadata(
+    _ repo: String,
+    environment: [String: String]
+  ) -> [String: AssetMetadata]? {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["hf", "models", "list", repo, "-R", "--json"]
+    process.environment = environment
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+
+    do {
+      try process.run()
+    } catch {
+      return nil
+    }
+
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { return nil }
+    guard let entries = try? JSONDecoder().decode([HFRepoEntry].self, from: data) else { return nil }
+
+    var result: [String: AssetMetadata] = [:]
+    for entry in entries {
+      let size = entry.lfs?.size ?? entry.size
+      guard let size else { continue }
+      result[entry.path] = AssetMetadata(size: size, sha256: entry.lfs?.sha256)
+    }
+    return result
   }
 
   // MARK: - Delete
@@ -236,24 +349,45 @@ final class ModelStore: ObservableObject {
     return hubURL.appendingPathComponent(folder)
   }
 
+  private func expectedBytes(
+    _ profile: ModelProfile,
+    metadata: [ModelAsset: AssetMetadata]
+  ) -> Int64? {
+    var total: Int64 = 0
+    for asset in profile.assets {
+      guard let size = metadata[asset]?.size else { return nil }
+      total += size
+    }
+    return total
+  }
+
+  /// Fractional download progress, capped just under 1; nil when the total is unknown.
+  private func progressFraction(completed: Int64, total: Int64?) -> Double? {
+    total.flatMap { $0 > 0 ? min(0.999, Double(completed) / Double($0)) : nil }
+  }
+
   /// Total bytes currently stored for a profile's declared assets.
-  nonisolated private func diskBytes(_ profile: ModelProfile) -> Int64 {
-    profile.assets.reduce(0) { $0 + diskBytes($1) }
+  nonisolated private func diskBytes(
+    _ profile: ModelProfile,
+    metadata: [ModelAsset: AssetMetadata]
+  ) -> Int64 {
+    profile.assets.reduce(0) { $0 + diskBytes($1, metadata: metadata[$1]) }
   }
 
   /// Bytes for exactly one asset. While Hugging Face is downloading, it can leave
-  /// several stale `<sha>.*.incomplete` files for the same blob; count only the
-  /// newest one so progress cannot exceed the asset's declared size.
-  nonisolated private func diskBytes(_ asset: ModelAsset) -> Int64 {
+  /// several stale `<sha>.*.incomplete` files for the same blob; when HF metadata
+  /// is available, count only the newest matching partial.
+  nonisolated private func diskBytes(_ asset: ModelAsset, metadata: AssetMetadata?) -> Int64 {
+    let expected = metadata?.size
     if let local = localURL(for: asset) {
-      return min(asset.bytes, fileBytes(local))
+      return boundedBytes(fileBytes(local), expected: expected)
     }
 
-    guard let sha = asset.blobSHA256 else { return 0 }
+    guard let sha = metadata?.sha256 else { return 0 }
     let blobs = repoURL(asset.repo).appendingPathComponent("blobs")
     let complete = blobs.appendingPathComponent(sha)
     if FileManager.default.fileExists(atPath: complete.path) {
-      return min(asset.bytes, fileBytes(complete))
+      return boundedBytes(fileBytes(complete), expected: expected)
     }
 
     guard let entries = try? FileManager.default.contentsOfDirectory(
@@ -274,7 +408,11 @@ final class ModelStore: ObservableObject {
         let right = rightValues?.contentModificationDate ?? .distantPast
         return left < right
       }
-    return partial.map { min(asset.bytes, fileBytes($0)) } ?? 0
+    return partial.map { boundedBytes(fileBytes($0), expected: expected) } ?? 0
+  }
+
+  nonisolated private func boundedBytes(_ bytes: Int64, expected: Int64?) -> Int64 {
+    expected.map { min($0, bytes) } ?? bytes
   }
 
   nonisolated private func fileBytes(_ url: URL) -> Int64 {
