@@ -1,10 +1,35 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dakodeon-icon-light.png">
+  <img src="docs/assets/dakodeon-icon.png" alt="Dakodeon" width="88">
+</picture>
+
 # Dakodeon
 
-A slim macOS menu bar app that runs local models with an OpenAI-compatible API.
+**Run local models from your macOS menu bar — behind an OpenAI-compatible API.**
 
-Pick a curated model, start the local `llama-server`, and point any agent at
-`http://127.0.0.1:8080/v1`. Dakodeon does not bundle `llama.cpp`, `hf`, or model
-weights — it drives the tools already on your system.
+[![License: MIT](https://img.shields.io/badge/License-MIT-0A84FF.svg)](LICENSE)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111111?logo=apple&logoColor=white)](#install)
+[![Swift](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)](Package.swift)
+[![Website](https://img.shields.io/badge/Website-dakodeon-30C057)](https://emin93.github.io/dakodeon/)
+
+[Website](https://emin93.github.io/dakodeon/) · [Install](#install) · [How it works](#how-it-works) · [Develop](#development)
+
+<br>
+
+<img src="docs/assets/screenshot-menu.png" alt="Dakodeon menu bar panel" width="360">
+
+</div>
+
+---
+
+Dakodeon is a tiny menu bar app. Pick a curated model, start the local
+[`llama-server`](https://github.com/ggml-org/llama.cpp), and point any agent — OpenCode,
+Zed, or your own scripts — at `http://127.0.0.1:8080/v1`.
+
+It bundles **no runtime and no weights**. It drives the `llama.cpp` and `hf` tools already
+on your machine, so the app itself stays tiny.
 
 ## Install
 
@@ -12,44 +37,81 @@ weights — it drives the tools already on your system.
 brew install --cask emin93/tap/dakodeon
 ```
 
-Requires `llama.cpp` and `hf` on your PATH (macOS 14+).
+> [!NOTE]
+> **Requirements:** macOS 14+, with `llama-server` and `hf` on your `PATH`.
+> ```sh
+> brew install llama.cpp
+> pip install -U "huggingface_hub[cli]"   # provides `hf`
+> ```
 
-## What it does
+## Features
 
-- **Menu bar control** — start/stop the server and switch models from a slim panel.
-- **Model manager** — the Settings window shows each model's download status, lets you
-  download or delete weights, and reveals files in Finder.
-- **Instant switching** — choosing a model while the server runs stops it and relaunches
-  with that profile's parameters (weights, draft/MTP model, and tuned flags).
-- **Clean shutdown** — quitting the app stops the `llama-server` process.
+|  |  |
+| :-- | :-- |
+| 🧭&nbsp; **Menu bar control** | Start/stop the server and switch models from a slim panel. |
+| 📦&nbsp; **Model manager** | A Settings window shows each model's download status — download, cancel, delete, or reveal weights in Finder. |
+| 🔄&nbsp; **Instant switching** | Pick a model while the server runs and it relaunches with that profile's parameters. |
+| 🧹&nbsp; **Clean shutdown** | Quitting the app stops `llama-server`. |
+| 🚀&nbsp; **Full context** | Every model is served at its full trained context (`-c 0`) using its own chat template (`--jinja`). |
+
+<div align="center">
+<img src="docs/assets/screenshot-settings.png" alt="Dakodeon Settings — model manager" width="480">
+</div>
+
+## How it works
+
+Dakodeon launches `llama-server` with the selected profile and exposes the standard
+OpenAI-compatible endpoints under a stable `local` alias:
+
+```http
+POST http://127.0.0.1:8080/v1/chat/completions
+GET  http://127.0.0.1:8080/v1/models
+```
+
+Model files download to the shared Hugging Face cache via `hf`; the app resolves the
+local GGUF paths and points the server at them — nothing is copied or duplicated.
 
 ## Models
 
-Model profiles are curated in [`Sources/Dakodeon/Catalog.swift`](Sources/Dakodeon/Catalog.swift).
-Each `ModelProfile` defines its weights, an optional draft/MTP model, and any extra
-`llama-server` flags. To add a model, append an entry — there are no per-user settings.
+Profiles are curated in code at
+[`Sources/Dakodeon/Catalog.swift`](Sources/Dakodeon/Catalog.swift). Each `ModelProfile`
+declares its weights, an optional draft / MTP model, and any extra `llama-server` flags.
+The app exposes **no per-user configuration** — to add a model, append an entry:
 
-Bundled today:
+```swift
+ModelProfile(
+  id: "gemma4-12b-coder",
+  name: "Gemma4 12B Coder",
+  detail: "12B · Q8_0 · MTP draft",
+  weights: ModelAsset(repo: "yuxinlu1/…-GGUF", file: "gemma4-coding-Q8_0.gguf", bytes: 12_669_645_344),
+  draft:   ModelAsset(repo: "yuxinlu1/…-MTP-GGUF", file: "MTP/…-Q8_0.gguf", bytes: 465_109_248),
+  extraArguments: ["--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--n-gpu-layers-draft", "all"]
+)
+```
 
-- **Gemma4 12B Coder** — `yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF` (Q8_0) with an MTP draft model for speculative decoding.
-
-Every model is served at its full trained context (`-c 0`) using the model's own
-chat template (`--jinja`).
+**Bundled today** — [Gemma4 12B Coder](https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF)
+(Q8_0) with an MTP draft model for speculative decoding.
 
 ## Development
 
 ```sh
 make run     # build, package, and launch the .app
-make zip     # build dist/Dakodeon.zip (the release artifact)
+make dist    # build the signed Dakodeon.app bundle
+make zip     # build dist/Dakodeon.zip (release artifact)
 ```
 
 ### Source layout
 
 | File | Responsibility |
-| --- | --- |
-| `Catalog.swift` | Curated model profiles + types |
-| `ModelStore.swift` | Download / delete / status via the `hf` cache |
-| `ServerController.swift` | `llama-server` lifecycle, model switching, shutdown |
-| `MenuView.swift` | The menu bar panel |
-| `SettingsView.swift` | Model management window |
-| `DakodeonApp.swift` | App entry, scenes, and icons |
+| :-- | :-- |
+| [`Catalog.swift`](Sources/Dakodeon/Catalog.swift) | Curated model profiles + types |
+| [`ModelStore.swift`](Sources/Dakodeon/ModelStore.swift) | Download / delete / status via the `hf` cache |
+| [`ServerController.swift`](Sources/Dakodeon/ServerController.swift) | `llama-server` lifecycle, switching, shutdown |
+| [`MenuView.swift`](Sources/Dakodeon/MenuView.swift) | The menu bar panel |
+| [`SettingsView.swift`](Sources/Dakodeon/SettingsView.swift) | Model-management window |
+| [`DakodeonApp.swift`](Sources/Dakodeon/DakodeonApp.swift) | App entry, scenes, and icons |
+
+## License
+
+[MIT](LICENSE) for the app. Model weights remain under their own licenses — the bundled
+Gemma model follows the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
