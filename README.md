@@ -63,7 +63,7 @@ brew install --cask emin93/tap/dakodeon
 
 Dakodeon launches `llama-server` in router mode and exposes the standard
 OpenAI-compatible endpoints. `GET /v1/models` returns the available profile ids,
-such as `gemma4-12b-it-qat` and `gemma4-31b-it-qat`. Chat requests route by the
+such as `gemma4-12b-it-qat` and `gemma4-26b-a4b-it-qat`. Chat requests route by the
 JSON `model` field, so switching models in a client like OpenCode also moves the
 active model Dakodeon shows in the menu.
 
@@ -98,7 +98,7 @@ ModelProfile(
 | Profile | Quant | Draft | Download |
 | :-- | :-- | :-- | --: |
 | [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 6.97 GB |
-| [Gemma 4 31B IT QAT](https://huggingface.co/unsloth/gemma-4-31B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 17.57 GB |
+| [Gemma 4 26B A4B IT QAT](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 14.50 GB |
 
 ## Development
 

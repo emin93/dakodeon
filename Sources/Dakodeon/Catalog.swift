@@ -49,14 +49,14 @@ enum Catalog {
       ]
     ),
     ModelProfile(
-      id: "gemma4-31b-it-qat",
+      id: "gemma4-26b-a4b-it-qat",
       weights: ModelAsset(
-        repo: "unsloth/gemma-4-31B-it-qat-GGUF",
-        file: "gemma-4-31B-it-qat-UD-Q4_K_XL.gguf"
+        repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
+        file: "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
       ),
       draft: ModelAsset(
-        repo: "unsloth/gemma-4-31B-it-qat-GGUF",
-        file: "mtp-gemma-4-31B-it.gguf"
+        repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
+        file: "mtp-gemma-4-26B-A4B-it.gguf"
       ),
       extraArguments: [
         "-ngl", "999",
