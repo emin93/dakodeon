@@ -52,6 +52,7 @@ brew install --cask emin93/tap/dakodeon
 | 🧭&nbsp; **Menu bar control** | Start/stop the server and see the active model from a slim panel. |
 | 📦&nbsp; **Model manager** | A Settings window shows each model's download status — download, cancel, delete, or reveal weights in Finder. |
 | 🔄&nbsp; **Selection in your agent** | Clients like OpenCode select a model by id; `llama-server` routes to that profile and keeps one loaded at a time. The app has no model picker. |
+| 💤&nbsp; **Idle model sleep** | The router stays online, loads models on demand, and unloads model memory after inactivity. |
 | 🧹&nbsp; **Clean shutdown** | Quitting the app stops `llama-server`. |
 | 🚀&nbsp; **Native defaults** | `llama-server` loads each model's trained context and embedded chat template. |
 | 🖼️&nbsp; **Vision built in** | Each model ships its multimodal projector, so image prompts work over the same OpenAI-compatible API. |
@@ -67,6 +68,12 @@ OpenAI-compatible endpoints. `GET /v1/models` returns the available profile ids,
 such as `gemma4-12b-it-qat` and `gemma4-26b-a4b-it-qat`. Chat requests route by the
 JSON `model` field, so switching models in a client like OpenCode also moves the
 active model Dakodeon shows in the menu.
+
+The router process is designed to stay up for long sessions. Dakodeon starts it with
+on-demand model loading and a five-minute idle sleep window: the model process and
+KV cache are released after inactivity, while the OpenAI-compatible endpoint remains
+available and reloads the requested model on the next task. The menu and Settings
+window show whether the active model is loaded, loading, sleeping, or unloaded.
 
 ```http
 POST http://127.0.0.1:8080/v1/chat/completions
@@ -99,6 +106,7 @@ ModelProfile(
 
 | Profile | Quant | Draft | Vision | Download |
 | :-- | :-- | :-- | :--: | --: |
+| [Gemma 4 E2B IT QAT](https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 3.67 GB |
 | [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 7.15 GB |
 | [Gemma 4 26B A4B IT QAT](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 15.69 GB |
 

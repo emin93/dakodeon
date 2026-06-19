@@ -35,6 +35,10 @@ struct SettingsView: View {
           }
         }
         LabeledContent("Status", value: statusText)
+        LabeledContent("Active Model", value: activeModelText)
+        LabeledContent("Memory State", value: memoryStateText)
+        Button("Unload Active Model") { server.unloadActiveModel() }
+          .disabled(!canUnloadActiveModel)
         Button("Open Logs…") { server.openLogs() }
           .disabled(server.logURL == nil)
       }
@@ -60,6 +64,26 @@ struct SettingsView: View {
     }
   }
 
+  private var activeModelText: String {
+    guard let id = server.activeModelID else { return "None" }
+    return Catalog.profile(id: id)?.name ?? id
+  }
+
+  private var memoryStateText: String {
+    guard server.state.isRunning else { return "Offline" }
+    switch server.activeModelState {
+    case .loaded: return "Loaded"
+    case .loading: return "Loading"
+    case .sleeping: return "Sleeping"
+    case .failed: return server.activeModelDiagnostic ?? "Failed"
+    case nil: return "Unloaded"
+    }
+  }
+
+  private var canUnloadActiveModel: Bool {
+    server.activeModelID != nil && server.activeModelState?.isMemoryResident == true
+  }
+
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
   }
@@ -73,6 +97,12 @@ private struct ModelRow: View {
 
   private var status: ModelStatus { store.status(for: profile) }
   private var isActive: Bool { server.activeModelID == profile.id }
+  private var activeState: RouterModelState? {
+    isActive ? server.activeModelState : nil
+  }
+  private var routerDiagnostic: String? {
+    server.modelDiagnostic(for: profile)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -97,7 +127,8 @@ private struct ModelRow: View {
       isPresented: $confirmingDelete,
       titleVisibility: .visible
     ) {
-      Button("Delete", role: .destructive) { store.delete(profile) }
+      Button("Delete", role: .destructive) { server.delete(profile) }
+        .disabled(isActive)
       Button("Cancel", role: .cancel) {}
     } message: {
       Text(deleteMessage)
@@ -145,9 +176,15 @@ private struct ModelRow: View {
     case .downloading:
       EmptyView()
     case .ready:
-      Label("Ready", systemImage: "checkmark.circle.fill")
-        .font(.system(size: 11))
-        .foregroundStyle(.green)
+      if let routerDiagnostic {
+        Label(routerDiagnostic, systemImage: "exclamationmark.triangle.fill")
+          .font(.system(size: 11))
+          .foregroundStyle(.orange)
+      } else {
+        Label("Ready", systemImage: "checkmark.circle.fill")
+          .font(.system(size: 11))
+          .foregroundStyle(.green)
+      }
     case .failed(let message):
       Label(message, systemImage: "exclamationmark.triangle.fill")
         .font(.system(size: 11))
@@ -168,18 +205,30 @@ private struct ModelRow: View {
       .controlSize(.small)
     case .ready:
       HStack(spacing: 8) {
-        if isActive {
-          Text("Active")
+        if routerDiagnostic != nil {
+          Text("Failed")
             .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.blue)
+            .foregroundStyle(.orange)
             .padding(.horizontal, 7)
             .frame(height: 20)
-            .background(Color.blue.opacity(0.14), in: Capsule())
+            .background(Color.orange.opacity(0.14), in: Capsule())
+        } else if isActive {
+          Text(activeStateTitle)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(activeStateTint)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(activeStateTint.opacity(0.14), in: Capsule())
+        }
+        if activeState?.isMemoryResident == true {
+          Button("Unload") { server.unloadModel(id: profile.id) }
+            .controlSize(.small)
         }
         Menu {
           Button("Reveal in Finder") { reveal() }
           Divider()
           Button("Delete…", role: .destructive) { confirmingDelete = true }
+            .disabled(isActive)
         } label: {
           Image(systemName: "ellipsis.circle")
         }
@@ -189,11 +238,31 @@ private struct ModelRow: View {
       }
     case .absent, .failed:
       Button {
-        store.download(profile)
+        server.download(profile)
       } label: {
         Label(status == .absent ? "Download" : "Retry", systemImage: "arrow.down.circle")
       }
       .controlSize(.small)
+    }
+  }
+
+  private var activeStateTitle: String {
+    switch activeState {
+    case .loaded: return "Loaded"
+    case .loading: return "Loading"
+    case .sleeping: return "Sleeping"
+    case .failed: return "Failed"
+    case nil: return "Active"
+    }
+  }
+
+  private var activeStateTint: Color {
+    switch activeState {
+    case .loaded: return .green
+    case .loading: return .orange
+    case .sleeping: return .blue
+    case .failed: return .orange
+    case nil: return .blue
     }
   }
 

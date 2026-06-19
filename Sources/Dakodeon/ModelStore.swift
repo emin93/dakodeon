@@ -281,14 +281,17 @@ final class ModelStore: ObservableObject {
 
   // MARK: - Delete
 
-  func delete(_ profile: ModelProfile) {
+  func delete(_ profile: ModelProfile, completion: (() -> Void)? = nil) {
     cancel(profile)
     statuses[profile.id] = .absent
     let assets = profile.assets
     DispatchQueue.global(qos: .utility).async {
       for asset in assets { self.removeSnapshotLinks(asset) }
       for repo in Set(assets.map(\.repo)) { self.garbageCollectRepo(repo) }
-      Task { @MainActor in self.refresh(profile) }
+      Task { @MainActor in
+        self.refresh(profile)
+        completion?()
+      }
     }
   }
 

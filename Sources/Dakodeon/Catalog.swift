@@ -39,6 +39,25 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
 enum Catalog {
   static let profiles: [ModelProfile] = [
     ModelProfile(
+      id: "gemma4-e2b-it-qat",
+      weights: ModelAsset(
+        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
+        file: "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
+      ),
+      draft: ModelAsset(
+        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
+        file: "mtp-gemma-4-E2B-it.gguf"
+      ),
+      mmproj: ModelAsset(
+        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
+        file: "mmproj-F16.gguf"
+      ),
+      extraArguments: [
+        "-ngl", "999",
+        "--spec-type", "draft-mtp",
+      ]
+    ),
+    ModelProfile(
       id: "gemma4-12b-it-qat",
       weights: ModelAsset(
         repo: "unsloth/gemma-4-12B-it-qat-GGUF",
@@ -84,14 +103,10 @@ enum Catalog {
 }
 
 enum ByteFormat {
-  private static let formatter: ByteCountFormatter = {
+  static func string(_ bytes: Int64) -> String {
     let f = ByteCountFormatter()
     f.countStyle = .file
     f.allowedUnits = [.useGB, .useMB]
-    return f
-  }()
-
-  static func string(_ bytes: Int64) -> String {
-    formatter.string(fromByteCount: bytes)
+    return f.string(fromByteCount: bytes)
   }
 }

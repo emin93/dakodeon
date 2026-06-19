@@ -46,23 +46,27 @@ struct MenuView: View {
         .tracking(0.7)
         .foregroundStyle(.tertiary)
 
-      HStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 2) {
         Text(activeModelName)
           .font(.system(size: 13, weight: .medium))
           .foregroundStyle(server.activeModelID == nil ? .secondary : .primary)
           .lineLimit(1)
           .truncationMode(.middle)
-        Spacer(minLength: 0)
+        Text(activeModelDetail)
+          .font(.system(size: 10.5))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 11)
-      .frame(height: 33)
+      .frame(height: 45)
       .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
       .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 1))
     }
   }
 
-  /// The model the router currently has loaded, shown read-only. Clients such as
-  /// OpenCode pick the model per request; Dakodeon just reflects what's loaded.
+  /// The model the router currently has loaded, loading, or sleeping. Clients such as
+  /// OpenCode pick the model per request; Dakodeon just reflects router state.
   private var activeModelName: String {
     if let id = server.activeModelID, let profile = Catalog.profile(id: id) {
       return profile.name
@@ -71,6 +75,17 @@ struct MenuView: View {
     case .running: return "No model loaded"
     case .starting: return "Starting…"
     default: return "Server not running"
+    }
+  }
+
+  private var activeModelDetail: String {
+    guard server.state.isRunning else { return "Router offline" }
+    switch server.activeModelState {
+    case .loaded: return "Loaded in memory"
+    case .loading: return "Loading on request"
+    case .sleeping: return "Sleeping; reloads on next request"
+    case .failed: return server.activeModelDiagnostic ?? "Model failed to load"
+    case nil: return "Loads automatically when requested"
     }
   }
 
@@ -160,6 +175,11 @@ struct MenuView: View {
         openSettings()
       }
       Spacer()
+      FooterButton(title: "Unload", systemImage: "eject") {
+        server.unloadActiveModel()
+      }
+      .disabled(!canUnloadActiveModel)
+      Spacer()
       FooterButton(title: "Logs", systemImage: "doc.text") {
         server.openLogs()
       }
@@ -169,6 +189,10 @@ struct MenuView: View {
         NSApp.terminate(nil)
       }
     }
+  }
+
+  private var canUnloadActiveModel: Bool {
+    server.activeModelID != nil && server.activeModelState?.isMemoryResident == true
   }
 }
 

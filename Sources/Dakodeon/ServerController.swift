@@ -12,6 +12,17 @@ enum ServerState: Equatable {
   var isStarting: Bool { self == .starting }
 }
 
+enum RouterModelState: String, Equatable {
+  case loaded
+  case loading
+  case sleeping
+  case failed
+
+  var isMemoryResident: Bool {
+    self == .loaded || self == .loading
+  }
+}
+
 /// Owns the `llama-server` process lifecycle and the selected model profile.
 ///
 /// Launches llama-server in router mode with curated model presets. Requests from
@@ -26,12 +37,15 @@ final class ServerController: ObservableObject {
   @Published private(set) var state: ServerState = .stopped
   @Published private(set) var message = ""
 
-  /// The model the router currently has loaded (from `/v1/models`), or nil when none is.
-  /// Clients such as OpenCode drive this by sending a `model` id per request.
+  /// The model the router most recently has active (loaded, loading, or sleeping), or nil
+  /// when every known model is unloaded. Clients drive this by sending a `model` id per request.
   @Published private(set) var activeModelID: String?
+  @Published private(set) var activeModelState: RouterModelState?
+  @Published private(set) var activeModelDiagnostic: String?
+  @Published private(set) var modelDiagnostics: [String: String] = [:]
 
-  /// The profile preloaded when the server starts. Not a user-facing selector: it tracks
-  /// the last model the router had loaded so the next launch resumes it.
+  /// The fallback profile used for start-triggered downloads. Not a user-facing selector: it
+  /// tracks the last model the router loaded so a first launch has a sensible default asset.
   @Published private(set) var selectedProfileID: String {
     didSet { UserDefaults.standard.set(selectedProfileID, forKey: Self.selectionKey) }
   }
@@ -43,12 +57,17 @@ final class ServerController: ObservableObject {
   var endpoint: String { "http://\(host):\(port)/v1" }
 
   private static let selectionKey = "selectedProfileID"
+  private let routerIdleSleepSeconds = 300
   private let environment = ServerController.makeEnvironment()
+  private let routerSession = ServerController.makeRouterSession()
   private var process: Process?
   private var logHandle: FileHandle?
   private var readinessTimer: Timer?
   private var routerSyncTimer: Timer?
   private var readinessAttempts = 0
+  private var readinessCheckInFlight = false
+  private var routerSyncInFlight = false
+  private var routerSyncFailures = 0
   private var stoppingIntentionally = false
   private var pendingRestart = false
   private var activeDownloadProfileID: String?
@@ -111,6 +130,7 @@ final class ServerController: ObservableObject {
     pendingRestart = forRestart
     readinessTimer?.invalidate()
     readinessTimer = nil
+    readinessCheckInFlight = false
     stopRouterSync()
 
     // Cancel a start-triggered download for whichever profile is actually downloading.
@@ -142,6 +162,34 @@ final class ServerController: ObservableObject {
     }
   }
 
+  func download(_ profile: ModelProfile) {
+    store.download(profile) { [weak self] ready in
+      guard let self, ready, self.state.isRunning else { return }
+      self.refreshRouterCatalog()
+    }
+  }
+
+  func delete(_ profile: ModelProfile) {
+    guard activeModelID != profile.id else { return }
+    let shouldResume = state.isRunning
+    if selectedProfileID == profile.id, let replacement = replacementProfileID(excluding: profile.id) {
+      selectedProfileID = replacement
+    }
+
+    store.delete(profile) { [weak self] in
+      guard let self, shouldResume else { return }
+      if Catalog.profiles.contains(where: { self.store.isComplete($0) }) {
+        self.refreshRouterCatalog()
+      } else {
+        self.stop()
+      }
+    }
+  }
+
+  func modelDiagnostic(for profile: ModelProfile) -> String? {
+    modelDiagnostics[profile.id]
+  }
+
   func openLogs() {
     guard let logURL else { return }
     NSWorkspace.shared.activateFileViewerSelecting([logURL])
@@ -166,6 +214,8 @@ final class ServerController: ObservableObject {
         "llama-server",
         "--models-preset", preset.path,
         "--models-max", "1",
+        "--models-autoload",
+        "--sleep-idle-seconds", String(routerIdleSleepSeconds),
         "--host", host,
         "--port", String(port),
         "--no-ui",
@@ -193,6 +243,7 @@ final class ServerController: ObservableObject {
     guard finished === process else { return }
     readinessTimer?.invalidate()
     readinessTimer = nil
+    readinessCheckInFlight = false
     resetRouterState()
     process = nil
     activeDownloadProfileID = nil
@@ -238,18 +289,23 @@ final class ServerController: ObservableObject {
   }
 
   private func checkReadiness() {
-    guard let process, process.isRunning else { return }
+    guard let process, process.isRunning, !readinessCheckInFlight else { return }
     readinessAttempts += 1
     if readinessAttempts > 180 {
       fail("Timed out waiting for llama-server")
       return
     }
 
-    let url = URL(string: "\(endpoint)/models")!
-    URLSession.shared.dataTask(with: url) { [weak self] _, response, _ in
-      guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status)
-      else { return }
-      Task { @MainActor in self?.markRunning() }
+    readinessCheckInFlight = true
+    let url = URL(string: "http://\(host):\(port)/models")!
+    routerSession.dataTask(with: url) { [weak self] _, response, _ in
+      let ready = (response as? HTTPURLResponse)
+        .map { (200..<300).contains($0.statusCode) } ?? false
+      Task { @MainActor in
+        guard let self else { return }
+        self.readinessCheckInFlight = false
+        if ready { self.markRunning() }
+      }
     }.resume()
   }
 
@@ -268,7 +324,7 @@ final class ServerController: ObservableObject {
   private func startRouterSync() {
     stopRouterSync()
     syncRouterActiveModel()
-    routerSyncTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+    routerSyncTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.syncRouterActiveModel() }
     }
   }
@@ -276,6 +332,7 @@ final class ServerController: ObservableObject {
   private func stopRouterSync() {
     routerSyncTimer?.invalidate()
     routerSyncTimer = nil
+    routerSyncInFlight = false
   }
 
   /// Tear down router bookkeeping: stop the sync poll and clear the active-model mirror.
@@ -283,31 +340,135 @@ final class ServerController: ObservableObject {
   private func resetRouterState() {
     stopRouterSync()
     activeModelID = nil
+    activeModelState = nil
+    activeModelDiagnostic = nil
+    modelDiagnostics = [:]
+    routerSyncFailures = 0
   }
 
-  /// Poll the router for the loaded model and mirror it into `activeModelID`. Clients
-  /// (OpenCode, etc.) decide which model is loaded by the `model` id they send; Dakodeon
-  /// only reflects it and remembers the last loaded model as the next startup profile.
+  /// Poll the router for the active model and mirror it into `activeModelID`. Clients
+  /// decide which model is loaded by the `model` id they send; Dakodeon keeps the
+  /// router alive and lets llama-server autoload/sleep the model process.
   private func syncRouterActiveModel() {
-    guard process?.isRunning == true else { return }
-    let url = URL(string: "\(endpoint)/models")!
-    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+    guard process?.isRunning == true, !routerSyncInFlight else { return }
+    routerSyncInFlight = true
+    let url = URL(string: "http://\(host):\(port)/models")!
+    routerSession.dataTask(with: url) { [weak self] data, response, _ in
       guard let data,
             let status = (response as? HTTPURLResponse)?.statusCode,
             (200..<300).contains(status),
             let payload = try? JSONDecoder().decode(RouterModelsResponse.self, from: data)
-      else { return }
+      else {
+        Task { @MainActor in self?.handleRouterSyncFailure() }
+        return
+      }
 
       let known = Set(Catalog.profiles.map(\.id))
       let models = payload.data.filter { known.contains($0.id) }
-      let loaded = models.first { $0.status?.value == "loaded" }?.id
-      let active = loaded ?? models.first { $0.status?.value == "loading" }?.id
+      let activeModel = models.first { $0.routerState == .loaded }
+        ?? models.first { $0.routerState == .loading }
+        ?? models.first { $0.routerState == .sleeping }
+        ?? models.first { $0.routerState == .failed }
+      let diagnostics = Dictionary(
+        uniqueKeysWithValues: models.compactMap { model in
+          model.diagnostic.map { (model.id, $0) }
+        }
+      )
       Task { @MainActor in
-        guard let self, self.process?.isRunning == true else { return }
-        self.activeModelID = active
-        // Remember the last fully-loaded model so the next launch preloads it.
-        if let loaded, self.selectedProfileID != loaded { self.selectedProfileID = loaded }
+        guard let self else { return }
+        self.routerSyncInFlight = false
+        guard self.process?.isRunning == true else { return }
+        if self.routerSyncFailures > 0 {
+          self.routerSyncFailures = 0
+          self.message = "Serving \(self.endpoint)"
+        }
+        if self.activeModelID != activeModel?.id {
+          self.activeModelID = activeModel?.id
+        }
+        if self.activeModelState != activeModel?.routerState {
+          self.activeModelState = activeModel?.routerState
+        }
+        if self.activeModelDiagnostic != activeModel?.diagnostic {
+          self.activeModelDiagnostic = activeModel?.diagnostic
+        }
+        if self.modelDiagnostics != diagnostics {
+          self.modelDiagnostics = diagnostics
+        }
+        if let diagnostic = diagnostics.values.sorted().first {
+          self.message = diagnostic
+        } else if self.message != "Serving \(self.endpoint)" {
+          self.message = "Serving \(self.endpoint)"
+        }
+        // Remember the last fully-loaded model so first-run downloads stay useful.
+        if activeModel?.routerState == .loaded,
+           let loaded = activeModel?.id,
+           self.selectedProfileID != loaded {
+          self.selectedProfileID = loaded
+        }
       }
+    }.resume()
+  }
+
+  private func refreshRouterCatalog() {
+    guard state.isRunning, process?.isRunning == true else { return }
+    do {
+      let profiles = Catalog.profiles.filter { store.isComplete($0) }
+      guard !profiles.isEmpty else {
+        stop()
+        return
+      }
+      _ = try writeRouterPreset(profiles)
+      reloadRouterModels()
+    } catch {
+      fail(error.localizedDescription)
+    }
+  }
+
+  private func reloadRouterModels() {
+    guard process?.isRunning == true else { return }
+    var components = URLComponents(string: "http://\(host):\(port)/models")!
+    components.queryItems = [URLQueryItem(name: "reload", value: "1")]
+    routerSession.dataTask(with: components.url!) { [weak self] _, response, _ in
+      let reloaded = (response as? HTTPURLResponse)
+        .map { (200..<300).contains($0.statusCode) } ?? false
+      Task { @MainActor in
+        guard let self else { return }
+        if reloaded {
+          self.syncRouterActiveModel()
+        } else {
+          self.handleRouterSyncFailure()
+        }
+      }
+    }.resume()
+  }
+
+  private func handleRouterSyncFailure() {
+    routerSyncInFlight = false
+    guard process?.isRunning == true, state.isRunning else { return }
+    routerSyncFailures += 1
+    if routerSyncFailures >= 5 {
+      fail("llama-server health check failed")
+    } else {
+      message = "Router health check failed"
+    }
+  }
+
+  func unloadActiveModel() {
+    guard let activeModelID else { return }
+    unloadModel(id: activeModelID)
+  }
+
+  func unloadModel(id: String) {
+    guard process?.isRunning == true else { return }
+    var request = URLRequest(url: URL(string: "http://\(host):\(port)/models/unload")!)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try? JSONEncoder().encode(RouterModelRequest(model: id))
+
+    routerSession.dataTask(with: request) { [weak self] _, response, _ in
+      guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status)
+      else { return }
+      Task { @MainActor in self?.syncRouterActiveModel() }
     }.resume()
   }
 
@@ -367,7 +528,8 @@ final class ServerController: ObservableObject {
 
       lines += [
         "[\(profile.id)]",
-        "load-on-startup = \(profile.id == selectedProfileID ? "true" : "false")",
+        "load-on-startup = false",
+        "stop-timeout = 3",
         "model = \(weights)",
       ]
 
@@ -403,6 +565,14 @@ final class ServerController: ObservableObject {
       env["LLAMA_CACHE"] = directory.path
     }
     return env
+  }
+
+  private func replacementProfileID(excluding removedID: String) -> String? {
+    Catalog.profiles.first {
+      $0.id != removedID && store.isComplete($0)
+    }?.id ?? Catalog.profiles.first {
+      $0.id != removedID
+    }?.id
   }
 
   private static func routerPresetArguments(_ arguments: [String]) -> [(String, String)] {
@@ -474,6 +644,18 @@ final class ServerController: ObservableObject {
     env["PATH"] = "\(homebrew):\(env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")"
     return env
   }
+
+  private static func makeRouterSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = 2
+    configuration.timeoutIntervalForResource = 4
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    return URLSession(configuration: configuration)
+  }
+}
+
+private struct RouterModelRequest: Encodable {
+  let model: String
 }
 
 private struct RouterModelsResponse: Decodable {
@@ -483,8 +665,30 @@ private struct RouterModelsResponse: Decodable {
 private struct RouterModel: Decodable {
   let id: String
   let status: RouterStatus?
+
+  var routerState: RouterModelState? {
+    if status?.failed == true { return .failed }
+    guard let value = status?.value else { return nil }
+    return RouterModelState(rawValue: value)
+  }
+
+  var diagnostic: String? {
+    guard routerState == .failed else { return nil }
+    if let exitCode = status?.exitCode {
+      return "\(id) failed to load (exit \(exitCode))"
+    }
+    return "\(id) failed to load"
+  }
 }
 
 private struct RouterStatus: Decodable {
   let value: String
+  let failed: Bool?
+  let exitCode: Int?
+
+  private enum CodingKeys: String, CodingKey {
+    case value
+    case failed
+    case exitCode = "exit_code"
+  }
 }
