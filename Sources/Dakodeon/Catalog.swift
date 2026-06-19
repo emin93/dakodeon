@@ -16,11 +16,13 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
   let weights: ModelAsset
   /// Optional speculative-decoding draft / MTP model.
   let draft: ModelAsset?
+  /// Optional multimodal vision projector, passed to `llama-server` via `--mmproj`.
+  let mmproj: ModelAsset?
   /// Extra `llama-server` flags appended verbatim (after the resolved model paths).
   let extraArguments: [String]
 
   /// Every asset this profile needs on disk.
-  var assets: [ModelAsset] { draft.map { [weights, $0] } ?? [weights] }
+  var assets: [ModelAsset] { [weights] + [draft, mmproj].compactMap { $0 } }
 
   /// Display name shown in the menu and Settings — the full Hugging Face repository
   /// (e.g. `unsloth/gemma-4-12B-it-qat-GGUF`).
@@ -28,6 +30,9 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
 
   /// Whether this profile ships a speculative-decoding draft / MTP model.
   var hasDraft: Bool { draft != nil }
+
+  /// Whether this profile ships a multimodal vision projector.
+  var hasVision: Bool { mmproj != nil }
 }
 
 /// The curated set of model profiles. Edit this list to add or update models.
@@ -43,6 +48,10 @@ enum Catalog {
         repo: "unsloth/gemma-4-12B-it-qat-GGUF",
         file: "mtp-gemma-4-12B-it.gguf"
       ),
+      mmproj: ModelAsset(
+        repo: "unsloth/gemma-4-12B-it-qat-GGUF",
+        file: "mmproj-F16.gguf"
+      ),
       extraArguments: [
         "-ngl", "999",
         "--spec-type", "draft-mtp",
@@ -57,6 +66,10 @@ enum Catalog {
       draft: ModelAsset(
         repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
         file: "mtp-gemma-4-26B-A4B-it.gguf"
+      ),
+      mmproj: ModelAsset(
+        repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
+        file: "mmproj-F16.gguf"
       ),
       extraArguments: [
         "-ngl", "999",

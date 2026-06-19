@@ -378,6 +378,13 @@ final class ServerController: ObservableObject {
         lines.append("model-draft = \(draftPath)")
       }
 
+      if let mmproj = profile.mmproj {
+        guard let mmprojPath = store.localURL(for: mmproj)?.path else {
+          throw Self.error("Vision projector missing for \(profile.name)")
+        }
+        lines.append("mmproj = \(mmprojPath)")
+      }
+
       for (key, value) in Self.routerPresetArguments(profile.extraArguments) {
         lines.append("\(key) = \(value)")
       }

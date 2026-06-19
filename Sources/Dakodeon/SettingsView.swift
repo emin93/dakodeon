@@ -118,6 +118,7 @@ private struct ModelRow: View {
   private var modelDetail: String {
     var parts: [String] = []
     if let size = store.sizeDescription(for: profile) { parts.append(size) }
+    if profile.hasVision { parts.append("Vision") }
     if profile.hasDraft { parts.append("MTP draft") }
     return parts.joined(separator: " · ")
   }

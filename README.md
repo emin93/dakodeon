@@ -54,6 +54,7 @@ brew install --cask emin93/tap/dakodeon
 | 🔄&nbsp; **Selection in your agent** | Clients like OpenCode select a model by id; `llama-server` routes to that profile and keeps one loaded at a time. The app has no model picker. |
 | 🧹&nbsp; **Clean shutdown** | Quitting the app stops `llama-server`. |
 | 🚀&nbsp; **Native defaults** | `llama-server` loads each model's trained context and embedded chat template. |
+| 🖼️&nbsp; **Vision built in** | Each model ships its multimodal projector, so image prompts work over the same OpenAI-compatible API. |
 
 <div align="center">
 <img src="docs/assets/screenshot-settings.png" alt="Dakodeon Settings — model manager" width="480">
@@ -81,7 +82,7 @@ their Hugging Face repository — the same id clients send.
 
 Profiles are curated in code at
 [`Sources/Dakodeon/Catalog.swift`](Sources/Dakodeon/Catalog.swift). Each `ModelProfile`
-declares its weights, an optional draft / MTP model, and any extra `llama-server` flags.
+declares its weights, an optional draft / MTP model, an optional vision projector, and any extra `llama-server` flags.
 The app exposes **no per-user configuration** — to add a model, append an entry:
 
 ```swift
@@ -89,16 +90,17 @@ ModelProfile(
   id: "gemma4-12b-it-qat",
   weights: ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"),
   draft:   ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "mtp-gemma-4-12B-it.gguf"),
+  mmproj:  ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "mmproj-F16.gguf"),
   extraArguments: ["-ngl", "999", "--spec-type", "draft-mtp"]
 )
 ```
 
 **Bundled today**
 
-| Profile | Quant | Draft | Download |
-| :-- | :-- | :-- | --: |
-| [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 6.97 GB |
-| [Gemma 4 26B A4B IT QAT](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | UD-Q4_K_XL | MTP | 14.50 GB |
+| Profile | Quant | Draft | Vision | Download |
+| :-- | :-- | :-- | :--: | --: |
+| [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 7.15 GB |
+| [Gemma 4 26B A4B IT QAT](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 15.69 GB |
 
 ## Development
 
