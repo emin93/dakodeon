@@ -18,6 +18,8 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
   let draft: ModelAsset?
   /// Optional multimodal vision projector, passed to `llama-server` via `--mmproj`.
   let mmproj: ModelAsset?
+  /// Optional chat template written to a profile-specific file and passed via `chat-template-file`.
+  let chatTemplate: String?
   /// Extra `llama-server` flags appended verbatim (after the resolved model paths).
   let extraArguments: [String]
 
@@ -25,7 +27,7 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
   var assets: [ModelAsset] { [weights] + [draft, mmproj].compactMap { $0 } }
 
   /// Display name shown in the menu and Settings — the full Hugging Face repository
-  /// (e.g. `unsloth/gemma-4-12B-it-qat-GGUF`).
+  /// (e.g. `deepreinforce-ai/Ornith-1.0-35B-GGUF`).
   var name: String { weights.repo }
 
   /// Whether this profile ships a speculative-decoding draft / MTP model.
@@ -38,44 +40,6 @@ struct ModelProfile: Identifiable, Hashable, Sendable {
 /// The curated set of model profiles. Edit this list to add or update models.
 enum Catalog {
   static let profiles: [ModelProfile] = [
-    ModelProfile(
-      id: "gemma4-e2b-it-qat",
-      weights: ModelAsset(
-        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
-        file: "gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
-      ),
-      draft: ModelAsset(
-        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
-        file: "mtp-gemma-4-E2B-it.gguf"
-      ),
-      mmproj: ModelAsset(
-        repo: "unsloth/gemma-4-E2B-it-qat-GGUF",
-        file: "mmproj-F16.gguf"
-      ),
-      extraArguments: [
-        "-ngl", "999",
-        "--spec-type", "draft-mtp",
-      ]
-    ),
-    ModelProfile(
-      id: "gemma4-12b-it-qat",
-      weights: ModelAsset(
-        repo: "unsloth/gemma-4-12B-it-qat-GGUF",
-        file: "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
-      ),
-      draft: ModelAsset(
-        repo: "unsloth/gemma-4-12B-it-qat-GGUF",
-        file: "mtp-gemma-4-12B-it.gguf"
-      ),
-      mmproj: ModelAsset(
-        repo: "unsloth/gemma-4-12B-it-qat-GGUF",
-        file: "mmproj-F16.gguf"
-      ),
-      extraArguments: [
-        "-ngl", "999",
-        "--spec-type", "draft-mtp",
-      ]
-    ),
     ModelProfile(
       id: "gemma4-26b-a4b-it-qat",
       weights: ModelAsset(
@@ -90,9 +54,24 @@ enum Catalog {
         repo: "unsloth/gemma-4-26B-A4B-it-qat-GGUF",
         file: "mmproj-F16.gguf"
       ),
+      chatTemplate: nil,
       extraArguments: [
         "-ngl", "999",
         "--spec-type", "draft-mtp",
+      ]
+    ),
+    ModelProfile(
+      id: "ornith-1.0-35b",
+      weights: ModelAsset(
+        repo: "deepreinforce-ai/Ornith-1.0-35B-GGUF",
+        file: "ornith-1.0-35b-Q4_K_M.gguf"
+      ),
+      draft: nil,
+      mmproj: nil,
+      chatTemplate: ModelTemplates.ornith,
+      extraArguments: [
+        "-ngl", "999",
+        "--reasoning-format", "deepseek",
       ]
     )
   ]

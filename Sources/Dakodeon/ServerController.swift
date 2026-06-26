@@ -518,6 +518,8 @@ final class ServerController: ObservableObject {
     let directory = try Self.applicationSupportDirectory()
       .appendingPathComponent("Router", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let templatesDirectory = directory.appendingPathComponent("Templates", isDirectory: true)
+    try FileManager.default.createDirectory(at: templatesDirectory, withIntermediateDirectories: true)
     let file = directory.appendingPathComponent("models.ini")
 
     var lines: [String] = []
@@ -545,6 +547,12 @@ final class ServerController: ObservableObject {
           throw Self.error("Vision projector missing for \(profile.name)")
         }
         lines.append("mmproj = \(mmprojPath)")
+      }
+
+      if let chatTemplate = profile.chatTemplate {
+        let templateFile = templatesDirectory.appendingPathComponent("\(profile.id).jinja")
+        try chatTemplate.write(to: templateFile, atomically: true, encoding: .utf8)
+        lines.append("chat-template-file = \(templateFile.path)")
       }
 
       for (key, value) in Self.routerPresetArguments(profile.extraArguments) {

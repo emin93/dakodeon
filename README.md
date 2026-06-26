@@ -55,7 +55,7 @@ brew install --cask emin93/tap/dakodeon
 | 💤&nbsp; **Idle model sleep** | The router stays online, loads models on demand, and unloads model memory after inactivity. |
 | 🧹&nbsp; **Clean shutdown** | Quitting the app stops `llama-server`. |
 | 🚀&nbsp; **Native defaults** | `llama-server` loads each model's trained context and embedded chat template. |
-| 🖼️&nbsp; **Vision built in** | Each model ships its multimodal projector, so image prompts work over the same OpenAI-compatible API. |
+| 🧩&nbsp; **Curated assets** | Profiles can include weights, draft models, vision projectors, and tuned `llama-server` flags. |
 
 <div align="center">
 <img src="docs/assets/screenshot-settings.png" alt="Dakodeon Settings — model manager" width="480">
@@ -65,7 +65,7 @@ brew install --cask emin93/tap/dakodeon
 
 Dakodeon launches `llama-server` in router mode and exposes the standard
 OpenAI-compatible endpoints. `GET /v1/models` returns the available profile ids,
-such as `gemma4-12b-it-qat` and `gemma4-26b-a4b-it-qat`. Chat requests route by the
+such as `gemma4-26b-a4b-it-qat` and `ornith-1.0-35b`. Chat requests route by the
 JSON `model` field, so switching models in a client like OpenCode also moves the
 active model Dakodeon shows in the menu.
 
@@ -89,16 +89,17 @@ their Hugging Face repository — the same id clients send.
 
 Profiles are curated in code at
 [`Sources/Dakodeon/Catalog.swift`](Sources/Dakodeon/Catalog.swift). Each `ModelProfile`
-declares its weights, an optional draft / MTP model, an optional vision projector, and any extra `llama-server` flags.
+declares its weights, an optional draft / MTP model, an optional vision projector, an optional chat template, and any extra `llama-server` flags.
 The app exposes **no per-user configuration** — to add a model, append an entry:
 
 ```swift
 ModelProfile(
-  id: "gemma4-12b-it-qat",
-  weights: ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"),
-  draft:   ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "mtp-gemma-4-12B-it.gguf"),
-  mmproj:  ModelAsset(repo: "unsloth/gemma-4-12B-it-qat-GGUF", file: "mmproj-F16.gguf"),
-  extraArguments: ["-ngl", "999", "--spec-type", "draft-mtp"]
+  id: "ornith-1.0-35b",
+  weights: ModelAsset(repo: "deepreinforce-ai/Ornith-1.0-35B-GGUF", file: "ornith-1.0-35b-Q4_K_M.gguf"),
+  draft: nil,
+  mmproj: nil,
+  chatTemplate: ModelTemplates.ornith,
+  extraArguments: ["-ngl", "999", "--reasoning-format", "deepseek"]
 )
 ```
 
@@ -106,9 +107,14 @@ ModelProfile(
 
 | Profile | Quant | Draft | Vision | Download |
 | :-- | :-- | :-- | :--: | --: |
-| [Gemma 4 E2B IT QAT](https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 3.67 GB |
-| [Gemma 4 12B IT QAT](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 7.15 GB |
 | [Gemma 4 26B A4B IT QAT](https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF) | UD-Q4_K_XL | MTP | ✓ | 15.69 GB |
+| [Ornith 1.0 35B](https://huggingface.co/deepreinforce-ai/Ornith-1.0-35B-GGUF) | Q4_K_M | - | - | 21.17 GB |
+
+Ornith uses its Hugging Face chat template with a small Codex compatibility patch:
+`developer` messages are rendered as system messages, and system messages are not
+required to appear only at index zero. Thinking remains enabled; `llama-server`
+is started with `--reasoning-format deepseek` so `<think>` content is returned as
+structured reasoning instead of being printed in the assistant answer.
 
 ## Development
 
@@ -132,4 +138,4 @@ make zip     # build dist/Dakodeon.zip (release artifact)
 ## License
 
 [MIT](LICENSE) for the app. Model weights remain under their own licenses — the bundled
-Gemma model follows the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
+Gemma profile follows the [Gemma Terms of Use](https://ai.google.dev/gemma/terms).
